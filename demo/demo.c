@@ -26,7 +26,7 @@ int main(int argc, char** argv) {
 
   // Read 2 integers from input
   int arr[2];
-  fread(arr, sizeof(arr), 2, stdin);
+  fread(arr, sizeof(int), 2, stdin);
   int a = arr[0];
   int b = arr[1];
 
