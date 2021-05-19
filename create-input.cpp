@@ -1,4 +1,5 @@
 #include <vector>
+#include <map>
 #include <numeric>
 #include <algorithm>
 
@@ -24,15 +25,16 @@ using namespace std;
 
 // The minimum probability to play
 // TODO: make this a parameter into gen_input?
-#define P_MIN = 0.01
+#define P_MIN 0.01
 
+std::map<unsigned int, double> weight_map;
 
 // Need x_t, and all mutations on x_t
 
 // Everytime this is called, do one iteration of multi-armed bandits
 // Write file into queue location
 // Return 0 if successs, or 1 otherwise
-int gen_input(char crash_reports[], int domain_reports[NUM_ACTIONS][NUM_DOMAINS]) {
+int gen_input(char crash_reports[], int domain_reports[NUM_ACTIONS][NUM_DOMAINS], unsigned int byte_hashes[NUM_ACTIONS]) {
     // Compute advice
     std::vector<double> advice(NUM_ACTIONS);
     get_advice(domain_reports, advice);
@@ -41,8 +43,10 @@ int gen_input(char crash_reports[], int domain_reports[NUM_ACTIONS][NUM_DOMAINS]
     std::vector<double> prob(NUM_ACTIONS);
     double total_prob = 0;
     for (int i = 0; i < prob.size(); i += 1) { 
-        // TODO: Replace this with weight of m_j(x_t) * advice[i];
-        prob[i] = advice[i];
+        if (weight_map.find(byte_hashes[i]) == weight_map.end()) {
+            weight_map[byte_hashes[i]] = 1;
+        }
+        prob[i] = weight_map[byte_hashes[i]] * advice[i];
         total_prob = total_prob + prob[i];
     }
     for (int i = 0; i < prob.size(); i += 1) {
@@ -53,7 +57,7 @@ int gen_input(char crash_reports[], int domain_reports[NUM_ACTIONS][NUM_DOMAINS]
     get_mix_prob(P_MIN, prob);
 
     // Sample action
-    int mutation = sample_mutation()
+    int mutation = sample_mutation();
 
     // Compute reward estimator
     std::vector<double> reward_est(NUM_ACTIONS);
