@@ -8,12 +8,22 @@
 using namespace std;
 /***
  * ActionIds:
- * 0 - 
- * 1 - 
- * 2 - 
- * 3 -
- * ...
- * 
+ * 0  - 
+ * 1  - 
+ * 2  - 
+ * 3  -
+ * 4  -
+ * 5  -
+ * 6  -
+ * 7  -
+ * 8  -
+ * 9  -
+ * 10 -
+ * 11 -
+ * 12 -
+ * 13 -
+ * 14 -
+ * 15 -
  ***/
 #define NUM_ACTIONS 16
 
@@ -21,13 +31,16 @@ using namespace std;
  * DomainIds:
  * 0 - Mem
  * 1 - Cmp
- * 
+ * 2 - 
+ * 3 - 
  ***/
 #define NUM_DOMAINS 4
 
 // The minimum probability to play
 // TODO: make this a parameter into gen_input?
+// TODO: actually set the right parameter for GAMMA
 #define P_MIN 0.01
+#define GAMMA 0.01 
 
 std::map<unsigned int, double> weight_map;
 std::set<unsigned int> visited_hashes;
@@ -68,7 +81,7 @@ int gen_input(char crash_reports[], int domain_reports[NUM_ACTIONS][NUM_DOMAINS]
 
     // Compute an exponential weight update
     for (int i = 0; i < NUM_ACTIONS; i++) {
-        weight_map[mutated_hash[i]] = weight_map[mutated_hash[i]] * 
+        weight_map[mutated_hash[i]] = weight_map[mutated_hash[i]] * exp((P_MIN / 2) * advice[j] * (reward_est[j] + GAMMA / prob[j]));
     }
 
     // Add x_t to the seen set
