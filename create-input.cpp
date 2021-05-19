@@ -1,4 +1,5 @@
 #include <vector>
+#include <set>
 #include <map>
 #include <numeric>
 #include <algorithm>
@@ -28,13 +29,14 @@ using namespace std;
 #define P_MIN 0.01
 
 std::map<unsigned int, double> weight_map;
+std::set<unsigned int> visited_hashes;
 
 // Need x_t, and all mutations on x_t
 
 // Everytime this is called, do one iteration of multi-armed bandits
 // Write file into queue location
 // Return 0 if successs, or 1 otherwise
-int gen_input(char crash_reports[], int domain_reports[NUM_ACTIONS][NUM_DOMAINS], unsigned int byte_hashes[NUM_ACTIONS]) {
+int gen_input(char crash_reports[], int domain_reports[NUM_ACTIONS][NUM_DOMAINS], unsigned int curr_hash, unsigned int byte_hashes[NUM_ACTIONS]) {
     // Compute advice
     std::vector<double> advice(NUM_ACTIONS);
     get_advice(domain_reports, advice);
@@ -71,7 +73,7 @@ int gen_input(char crash_reports[], int domain_reports[NUM_ACTIONS][NUM_DOMAINS]
     }
 
     // Add x_t to the seen set
-
+    visited_hashes.insert(curr_hash);
 
     // Update with new input
 }
