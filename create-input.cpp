@@ -57,7 +57,7 @@ int mix_prob(const double p_min, std::vector<double> &prob) {
     std::vector<size_t> indices(prob.size());
     iota(indices.begin(), indices.end(), 0);
     stable_sort(indices.begin(), indices.end(), 
-        [&prob](size_t a, size_t b){return prob[a] < prob[b]};);
+        [&prob](size_t a, size_t b){return prob[a] < prob[b];});
 
     // Iterate through the probabilities in sorted order
     for (const auto i: indices) {
