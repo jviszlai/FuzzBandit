@@ -21,3 +21,6 @@ afl-showdsf
 afl-tmin
 as
 sir_tests/
+
+# VSCode stuff
+.vscode/
