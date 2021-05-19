@@ -61,26 +61,16 @@ int mix_prob(const double p_min, std::vector<double> &prob) {
 
     // Iterate through the probabilities in sorted order
     for (const auto i: indices) {
-        p_old = prob.get(i);
+        double p_old = prob[i];
 
+        // Set the new probabilities
         if (p_old * (1 - delta / s) >= p_min) {
-            prob.set(i) = p_old * (1 - delta/s)
+            prob[i] = p_old * (1 - delta/s);
         } else {
-            prob.set(i) = p_min;
-            delta = delta + p_min - p_old;
+            prob[i] = p_min;
+            delta = delta + prob[i] - p_old;
             s = s - p_old;
         }
     }
-
-    // Iterate through the action probabilities in sorted order
-    // For actions j=1...K in the order of prob.get(j)
-        // if (p_j * (1 - delta / s)) >= p_min
-            // For all remaining actions p_j'
-                // Set p_j' = p_j' * (1 - delta/s)
-        // else
-            // p_j_old = p_j
-            // p_j = p_min
-            // delta = delta + p_j - p_j_old
-            // s = s - p_j_old 
 }
 
