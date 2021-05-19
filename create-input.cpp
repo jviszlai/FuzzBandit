@@ -44,14 +44,14 @@ int gen_input(char crash_reports[], int domain_reports[NUM_ACTIONS][NUM_DOMAINS]
     // Compute unmixed probabilities
     std::vector<double> prob(NUM_ACTIONS);
     double total_prob = 0;
-    for (int i = 0; i < prob.size(); i += 1) { 
+    for (int i = 0; i < prob.size(); i++) { 
         if (weight_map.find(byte_hashes[i]) == weight_map.end()) {
             weight_map[byte_hashes[i]] = 1;
         }
         prob[i] = weight_map[byte_hashes[i]] * advice[i];
         total_prob = total_prob + prob[i];
     }
-    for (int i = 0; i < prob.size(); i += 1) {
+    for (int i = 0; i < prob.size(); i++) {
         prob[i] = prob[i] / total_prob;
     }
 
@@ -59,16 +59,16 @@ int gen_input(char crash_reports[], int domain_reports[NUM_ACTIONS][NUM_DOMAINS]
     get_mix_prob(P_MIN, prob);
 
     // Sample action
-    int mutation = sample_mutation();
+    int mutation = sample_mutation(total_prob, prob);
 
     // Compute reward estimator
     std::vector<double> reward_est(NUM_ACTIONS);
-    for (int i = 0; i < reward_est.size(); i += 1) {
+    for (int i = 0; i < reward_est.size(); i++) {
         reward_est[i] = crash_reports[i] / prob[i];
     }
 
     // Compute an exponential weight update
-    for (int i = 0; i < NUM_ACTIONS; i += 1) {
+    for (int i = 0; i < NUM_ACTIONS; i++) {
         // TODO
     }
 
@@ -106,26 +106,29 @@ int get_mix_prob(const double p_min, std::vector<double> &prob) {
             prob[i] = p_old * (1 - delta/s);
         } else {
             prob[i] = p_min;
-            delta = delta + prob[i] - p_old;
-            s = s - p_old;
+            delta += + prob[i] - p_old;
+            s -= p_old;
         }
     }
 }
 
 // Returns the index of a randomly sampled element
 int sample_mutation(const double total_prob, const std::vector<double> &prob) {
-    // // Compute the cumulant
-    // std::vector<double> cumulant(prob.size());
-    // for (int i = 0; i < )
+    // Compute the cumulant
+    std::vector<double> cumulant(prob.size());
+    double curr_prob = 0;
+    for (int i = 0; i < prob.size(); i++) {
+        cumulant[i] = prob[i] + curr_prob;
+        curr_prob += prob[i];
+    }
 
-    // // Sample an index
-    // double sample = rand() / total_prob;
-    // for (int i = 0; i < prob.size(); i += 1) {
-    //     if (sample > prob[i]) {
-    //         return sample;
-    //     }
-    // }
-    // return 
-
-
+    // Sample an index
+    double sample = rand() / RAND_MAX;
+    int i;
+    for (i = 0; i < cumulant.size(); i++) {
+        if (sample < cumulant[i]) {
+            return i;
+        }
+    }
+    return i;
 }
