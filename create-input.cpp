@@ -1,6 +1,7 @@
 #include <vector>
 #include <set>
 #include <map>
+#include <math>
 #include <numeric>
 #include <algorithm>
 
@@ -31,12 +32,10 @@ using namespace std;
 std::map<unsigned int, double> weight_map;
 std::set<unsigned int> visited_hashes;
 
-// Need x_t, and all mutations on x_t
-
 // Everytime this is called, do one iteration of multi-armed bandits
 // Write file into queue location
 // Return 0 if successs, or 1 otherwise
-int gen_input(char crash_reports[], int domain_reports[NUM_ACTIONS][NUM_DOMAINS], unsigned int curr_hash, unsigned int byte_hashes[NUM_ACTIONS]) {
+int gen_input(char crash_reports[], int domain_reports[NUM_ACTIONS][NUM_DOMAINS], unsigned int curr_hash, unsigned int mutated_hash[NUM_ACTIONS]) {
     // Compute advice
     std::vector<double> advice(NUM_ACTIONS);
     get_advice(domain_reports, advice);
@@ -45,10 +44,10 @@ int gen_input(char crash_reports[], int domain_reports[NUM_ACTIONS][NUM_DOMAINS]
     std::vector<double> prob(NUM_ACTIONS);
     double total_prob = 0;
     for (int i = 0; i < prob.size(); i++) { 
-        if (weight_map.find(byte_hashes[i]) == weight_map.end()) {
-            weight_map[byte_hashes[i]] = 1;
+        if (weight_map.find(mutated_hash[i]) == weight_map.end()) {
+            weight_map[mutated_hash[i]] = 1;
         }
-        prob[i] = weight_map[byte_hashes[i]] * advice[i];
+        prob[i] = weight_map[mutated_hash[i]] * advice[i];
         total_prob = total_prob + prob[i];
     }
     for (int i = 0; i < prob.size(); i++) {
@@ -69,13 +68,14 @@ int gen_input(char crash_reports[], int domain_reports[NUM_ACTIONS][NUM_DOMAINS]
 
     // Compute an exponential weight update
     for (int i = 0; i < NUM_ACTIONS; i++) {
-        // TODO
+        weight_map[mutated_hash[i]] = weight_map[mutated_hash[i]] * 
     }
 
     // Add x_t to the seen set
     visited_hashes.insert(curr_hash);
 
-    // Update with new input
+    // Output sampled mutation
+    return mutation;
 }
 
 // Returns the aggregate score from the domain_reports
