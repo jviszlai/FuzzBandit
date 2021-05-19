@@ -148,6 +148,12 @@ static s32 forksrv_pid,               /* PID of the fork server           */
 
 EXP_ST u8* trace_bits;                /* SHM with instrumentation bitmap  */
 
+#define NUM_ACTIONS 16
+#define NUM_DOMAINS 4
+EXP_ST int8_t crash_reports[NUM_ACTIONS]; /* If mutated input from given action crashed */
+EXP_ST int domain_reports[NUM_DOMAINS][NUM_ACTIONS]; /* Domain-specific feedback for each action */
+EXP_ST uint32_t byte_hashes[NUM_ACTIONS]; /* Hash of result of each action */
+
 EXP_ST u32* dsf_map;                  /* DSF - SHM with additional maps   */
 EXP_ST u32  dsf_cumulated[DSF_LEN];   /* DSF - keeps track of cumulated values  */
 EXP_ST u8   dsf_entry_changed[DSF_LEN]; /* DSF - keeps track of changes in a run  */
@@ -4839,7 +4845,7 @@ abort_trimming:
    error conditions, returning 1 if it's time to bail out. This is
    a helper function for fuzz_one(). */
 
-EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len) {
+EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len, int action_id) {
 
   u8 fault;
 
@@ -4853,6 +4859,23 @@ EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len) {
   write_to_testcase(out_buf, len);
 
   fault = run_target(argv, exec_tmout);
+
+  if (fault != FAULT_NONE) {
+    crash_reports[action_id] = 1;
+  } else {
+    crash_reports[action_id] = 0;
+  }
+
+  for (int j = 0; j < dsf_count; j++) {
+    dsf_config* dsf = &dsf_configs[j];    
+    int report = 0;
+    for (int i = dsf->start; i < dsf->end; i++){
+        report += dsf_map[i];
+    }
+    domain_reports[j][action_id] = report;
+  }
+
+  byte_hashes[action_id] = hash32(out_buf, len, HASH_CONST);
 
   if (stop_soon) return 1;
 
@@ -4878,7 +4901,7 @@ EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len) {
 
   /* This handles FAULT_ERROR for us: */
 
-  queued_discovered += save_if_interesting(argv, out_buf, len, fault);
+  // queued_discovered += save_if_interesting(argv, out_buf, len, fault);
 
   if (!(stage_cur % stats_update_freq) || stage_cur + 1 == stage_max)
     show_stats();
@@ -5370,6 +5393,7 @@ static u8 fuzz_one(char** argv) {
   stage_short = "flip1";
   stage_max   = len << 3;
   stage_name  = "bitflip 1/1";
+  u8 stage_id = 0;
 
   stage_val_type = STAGE_VAL_NONE;
 
@@ -5383,7 +5407,7 @@ static u8 fuzz_one(char** argv) {
 
     FLIP_BIT(out_buf, stage_cur);
 
-    if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+    if (common_fuzz_stuff(argv, out_buf, len, stage_id)) goto abandon_entry;
 
     FLIP_BIT(out_buf, stage_cur);
 
@@ -5466,6 +5490,7 @@ static u8 fuzz_one(char** argv) {
   stage_name  = "bitflip 2/1";
   stage_short = "flip2";
   stage_max   = (len << 3) - 1;
+  stage_id = 1;
 
   orig_hit_cnt = new_hit_cnt;
 
@@ -5476,7 +5501,7 @@ static u8 fuzz_one(char** argv) {
     FLIP_BIT(out_buf, stage_cur);
     FLIP_BIT(out_buf, stage_cur + 1);
 
-    if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+    if (common_fuzz_stuff(argv, out_buf, len, stage_id)) goto abandon_entry;
 
     FLIP_BIT(out_buf, stage_cur);
     FLIP_BIT(out_buf, stage_cur + 1);
@@ -5493,6 +5518,7 @@ static u8 fuzz_one(char** argv) {
   stage_name  = "bitflip 4/1";
   stage_short = "flip4";
   stage_max   = (len << 3) - 3;
+  stage_id = 2;
 
   orig_hit_cnt = new_hit_cnt;
 
@@ -5505,7 +5531,7 @@ static u8 fuzz_one(char** argv) {
     FLIP_BIT(out_buf, stage_cur + 2);
     FLIP_BIT(out_buf, stage_cur + 3);
 
-    if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+    if (common_fuzz_stuff(argv, out_buf, len, stage_id)) goto abandon_entry;
 
     FLIP_BIT(out_buf, stage_cur);
     FLIP_BIT(out_buf, stage_cur + 1);
@@ -5548,6 +5574,7 @@ static u8 fuzz_one(char** argv) {
   stage_name  = "bitflip 8/8";
   stage_short = "flip8";
   stage_max   = len;
+  stage_id = 3;
 
   orig_hit_cnt = new_hit_cnt;
 
@@ -5557,7 +5584,7 @@ static u8 fuzz_one(char** argv) {
 
     out_buf[stage_cur] ^= 0xFF;
 
-    if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+    if (common_fuzz_stuff(argv, out_buf, len, stage_id)) goto abandon_entry;
 
     /* We also use this stage to pull off a simple trick: we identify
        bytes that seem to have no effect on the current execution path
@@ -5625,6 +5652,7 @@ static u8 fuzz_one(char** argv) {
   stage_short = "flip16";
   stage_cur   = 0;
   stage_max   = len - 1;
+  stage_id = 4;
 
   orig_hit_cnt = new_hit_cnt;
 
@@ -5641,7 +5669,7 @@ static u8 fuzz_one(char** argv) {
 
     *(u16*)(out_buf + i) ^= 0xFFFF;
 
-    if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+    if (common_fuzz_stuff(argv, out_buf, len, stage_id)) goto abandon_entry;
     stage_cur++;
 
     *(u16*)(out_buf + i) ^= 0xFFFF;
@@ -5662,6 +5690,7 @@ static u8 fuzz_one(char** argv) {
   stage_short = "flip32";
   stage_cur   = 0;
   stage_max   = len - 3;
+  stage_id = 5;
 
   orig_hit_cnt = new_hit_cnt;
 
@@ -5678,7 +5707,7 @@ static u8 fuzz_one(char** argv) {
 
     *(u32*)(out_buf + i) ^= 0xFFFFFFFF;
 
-    if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+    if (common_fuzz_stuff(argv, out_buf, len, stage_id)) goto abandon_entry;
     stage_cur++;
 
     *(u32*)(out_buf + i) ^= 0xFFFFFFFF;
@@ -5704,6 +5733,7 @@ skip_bitflip:
   stage_short = "arith8";
   stage_cur   = 0;
   stage_max   = 2 * len * ARITH_MAX;
+  stage_id = 6;
 
   stage_val_type = STAGE_VAL_LE;
 
@@ -5734,7 +5764,7 @@ skip_bitflip:
         stage_cur_val = j;
         out_buf[i] = orig + j;
 
-        if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+        if (common_fuzz_stuff(argv, out_buf, len, stage_id)) goto abandon_entry;
         stage_cur++;
 
       } else stage_max--;
@@ -5746,7 +5776,7 @@ skip_bitflip:
         stage_cur_val = -j;
         out_buf[i] = orig - j;
 
-        if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+        if (common_fuzz_stuff(argv, out_buf, len, stage_id)) goto abandon_entry;
         stage_cur++;
 
       } else stage_max--;
@@ -5770,6 +5800,7 @@ skip_bitflip:
   stage_short = "arith16";
   stage_cur   = 0;
   stage_max   = 4 * (len - 1) * ARITH_MAX;
+  stage_id = 7;
 
   orig_hit_cnt = new_hit_cnt;
 
@@ -5805,7 +5836,7 @@ skip_bitflip:
         stage_cur_val = j;
         *(u16*)(out_buf + i) = orig + j;
 
-        if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+        if (common_fuzz_stuff(argv, out_buf, len, stage_id)) goto abandon_entry;
         stage_cur++;
  
       } else stage_max--;
@@ -5815,7 +5846,7 @@ skip_bitflip:
         stage_cur_val = -j;
         *(u16*)(out_buf + i) = orig - j;
 
-        if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+        if (common_fuzz_stuff(argv, out_buf, len, stage_id)) goto abandon_entry;
         stage_cur++;
 
       } else stage_max--;
@@ -5830,7 +5861,7 @@ skip_bitflip:
         stage_cur_val = j;
         *(u16*)(out_buf + i) = SWAP16(SWAP16(orig) + j);
 
-        if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+        if (common_fuzz_stuff(argv, out_buf, len, stage_id)) goto abandon_entry;
         stage_cur++;
 
       } else stage_max--;
@@ -5840,7 +5871,7 @@ skip_bitflip:
         stage_cur_val = -j;
         *(u16*)(out_buf + i) = SWAP16(SWAP16(orig) - j);
 
-        if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+        if (common_fuzz_stuff(argv, out_buf, len, stage_id)) goto abandon_entry;
         stage_cur++;
 
       } else stage_max--;
@@ -5864,6 +5895,7 @@ skip_bitflip:
   stage_short = "arith32";
   stage_cur   = 0;
   stage_max   = 4 * (len - 3) * ARITH_MAX;
+  stage_id = 8;
 
   orig_hit_cnt = new_hit_cnt;
 
@@ -5898,7 +5930,7 @@ skip_bitflip:
         stage_cur_val = j;
         *(u32*)(out_buf + i) = orig + j;
 
-        if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+        if (common_fuzz_stuff(argv, out_buf, len, stage_id)) goto abandon_entry;
         stage_cur++;
 
       } else stage_max--;
@@ -5908,7 +5940,7 @@ skip_bitflip:
         stage_cur_val = -j;
         *(u32*)(out_buf + i) = orig - j;
 
-        if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+        if (common_fuzz_stuff(argv, out_buf, len, stage_id)) goto abandon_entry;
         stage_cur++;
 
       } else stage_max--;
@@ -5922,7 +5954,7 @@ skip_bitflip:
         stage_cur_val = j;
         *(u32*)(out_buf + i) = SWAP32(SWAP32(orig) + j);
 
-        if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+        if (common_fuzz_stuff(argv, out_buf, len, stage_id)) goto abandon_entry;
         stage_cur++;
 
       } else stage_max--;
@@ -5932,7 +5964,7 @@ skip_bitflip:
         stage_cur_val = -j;
         *(u32*)(out_buf + i) = SWAP32(SWAP32(orig) - j);
 
-        if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+        if (common_fuzz_stuff(argv, out_buf, len, stage_id)) goto abandon_entry;
         stage_cur++;
 
       } else stage_max--;
@@ -5958,6 +5990,7 @@ skip_arith:
   stage_short = "int8";
   stage_cur   = 0;
   stage_max   = len * sizeof(interesting_8);
+  stage_id = 9;
 
   stage_val_type = STAGE_VAL_LE;
 
@@ -5991,7 +6024,7 @@ skip_arith:
       stage_cur_val = interesting_8[j];
       out_buf[i] = interesting_8[j];
 
-      if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+      if (common_fuzz_stuff(argv, out_buf, len, stage_id)) goto abandon_entry;
 
       out_buf[i] = orig;
       stage_cur++;
@@ -6013,6 +6046,7 @@ skip_arith:
   stage_short = "int16";
   stage_cur   = 0;
   stage_max   = 2 * (len - 1) * (sizeof(interesting_16) >> 1);
+  stage_id = 10;
 
   orig_hit_cnt = new_hit_cnt;
 
@@ -6044,7 +6078,7 @@ skip_arith:
 
         *(u16*)(out_buf + i) = interesting_16[j];
 
-        if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+        if (common_fuzz_stuff(argv, out_buf, len, stage_id)) goto abandon_entry;
         stage_cur++;
 
       } else stage_max--;
@@ -6057,7 +6091,7 @@ skip_arith:
         stage_val_type = STAGE_VAL_BE;
 
         *(u16*)(out_buf + i) = SWAP16(interesting_16[j]);
-        if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+        if (common_fuzz_stuff(argv, out_buf, len, stage_id)) goto abandon_entry;
         stage_cur++;
 
       } else stage_max--;
@@ -6081,6 +6115,7 @@ skip_arith:
   stage_short = "int32";
   stage_cur   = 0;
   stage_max   = 2 * (len - 3) * (sizeof(interesting_32) >> 2);
+  stage_id = 11;
 
   orig_hit_cnt = new_hit_cnt;
 
@@ -6113,7 +6148,7 @@ skip_arith:
 
         *(u32*)(out_buf + i) = interesting_32[j];
 
-        if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+        if (common_fuzz_stuff(argv, out_buf, len, stage_id)) goto abandon_entry;
         stage_cur++;
 
       } else stage_max--;
@@ -6126,7 +6161,7 @@ skip_arith:
         stage_val_type = STAGE_VAL_BE;
 
         *(u32*)(out_buf + i) = SWAP32(interesting_32[j]);
-        if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+        if (common_fuzz_stuff(argv, out_buf, len, stage_id)) goto abandon_entry;
         stage_cur++;
 
       } else stage_max--;
@@ -6156,6 +6191,7 @@ skip_interest:
   stage_short = "ext_UO";
   stage_cur   = 0;
   stage_max   = extras_cnt * len;
+  stage_id = 12;
 
   stage_val_type = STAGE_VAL_NONE;
 
@@ -6192,7 +6228,7 @@ skip_interest:
       last_len = extras[j].len;
       memcpy(out_buf + i, extras[j].data, last_len);
 
-      if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+      if (common_fuzz_stuff(argv, out_buf, len, stage_id)) goto abandon_entry;
 
       stage_cur++;
 
@@ -6214,6 +6250,7 @@ skip_interest:
   stage_short = "ext_UI";
   stage_cur   = 0;
   stage_max   = extras_cnt * len;
+  stage_id = 13;
 
   orig_hit_cnt = new_hit_cnt;
 
@@ -6236,7 +6273,7 @@ skip_interest:
       /* Copy tail */
       memcpy(ex_tmp + i + extras[j].len, out_buf + i, len - i);
 
-      if (common_fuzz_stuff(argv, ex_tmp, len + extras[j].len)) {
+      if (common_fuzz_stuff(argv, ex_tmp, len + extras[j].len, stage_id)) {
         ck_free(ex_tmp);
         goto abandon_entry;
       }
@@ -6265,6 +6302,7 @@ skip_user_extras:
   stage_short = "ext_AO";
   stage_cur   = 0;
   stage_max   = MIN(a_extras_cnt, USE_AUTO_EXTRAS) * len;
+  stage_id = 14;
 
   stage_val_type = STAGE_VAL_NONE;
 
@@ -6292,7 +6330,7 @@ skip_user_extras:
       last_len = a_extras[j].len;
       memcpy(out_buf + i, a_extras[j].data, last_len);
 
-      if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+      if (common_fuzz_stuff(argv, out_buf, len, stage_id)) goto abandon_entry;
 
       stage_cur++;
 
@@ -6327,6 +6365,7 @@ havoc_stage:
   /* The havoc stage mutation code is also invoked when splicing files; if the
      splice_cycle variable is set, generate different descriptions and such. */
 
+  stage_id = 15;
   if (!splice_cycle) {
 
     stage_name  = "havoc";
@@ -6734,7 +6773,7 @@ havoc_stage:
 
     }
 
-    if (common_fuzz_stuff(argv, out_buf, temp_len))
+    if (common_fuzz_stuff(argv, out_buf, temp_len, stage_id))
       goto abandon_entry;
 
     /* out_buf might have been mangled a bit, so let's restore it to its
