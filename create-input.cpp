@@ -26,7 +26,7 @@ using namespace std;
  * 14 -
  * 15 -
  ***/
-#define NUM_ACTIONS 16
+#define NUM_ACTIONS 1166
 
 /***
  * DomainIds:
@@ -35,7 +35,7 @@ using namespace std;
  * 2 - 
  * 3 - 
  ***/
-#define NUM_DOMAINS 4
+#define NUM_DOMAINS 1
 
 // The minimum probability to play
 // TODO: make this a parameter into gen_input?
@@ -100,6 +100,7 @@ int gen_input(char crash_reports[], int domain_reports[NUM_ACTIONS][NUM_DOMAINS]
     visited_hashes.insert(curr_hash);
 
     // Output sampled mutation
+    
     return mutation;
 }
 
