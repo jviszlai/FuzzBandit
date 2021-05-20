@@ -47,7 +47,7 @@ std::map<unsigned int, double> weight_map;
 std::set<unsigned int> visited_hashes;
 
 // Global array of weights on the domain
-double domain_weights[] = {0, 0, 0, 0};
+double domain_weights[] = {1};
 
 
 // C API
