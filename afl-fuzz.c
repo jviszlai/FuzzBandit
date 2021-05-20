@@ -150,9 +150,14 @@ EXP_ST u8* trace_bits;                /* SHM with instrumentation bitmap  */
 
 #define NUM_ACTIONS 16
 #define NUM_DOMAINS 4
+
+int gen_input(char crash_reports[], int domain_reports[NUM_ACTIONS][NUM_DOMAINS], unsigned int curr_hash, unsigned int mutated_hash[NUM_ACTIONS]); /* C API for C++ function */
+
+EXP_ST uint32_t curr_hash;                /* Hash of current bytes */
 EXP_ST int8_t crash_reports[NUM_ACTIONS]; /* If mutated input from given action crashed */
 EXP_ST int domain_reports[NUM_DOMAINS][NUM_ACTIONS]; /* Domain-specific feedback for each action */
 EXP_ST uint32_t byte_hashes[NUM_ACTIONS]; /* Hash of result of each action */
+EXP_ST int chosen_action_id;          /* Chosen action id from bandit sampling algo */
 
 EXP_ST u32* dsf_map;                  /* DSF - SHM with additional maps   */
 EXP_ST u32  dsf_cumulated[DSF_LEN];   /* DSF - keeps track of cumulated values  */
@@ -3341,14 +3346,14 @@ static void save_as_perf_input(void * mem, u32 len) {
    save or queue the input test case for further analysis if so. Returns 1 if
    entry is saved, 0 otherwise. */
 
-static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
+static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault, u8 must_save) {
 
   u8  *fn = "";
   u8  hnb;
   s32 fd;
   u8  keeping = 0, res;
 
-  if (fault == crash_mode) {
+  if (must_save || fault == crash_mode) {
 
     /* Keep only if there are new bits in the map, add to queue for
        future fuzzing, etc. DSF: also keep if there is a new max*/
@@ -3359,7 +3364,7 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
         if (dsf_changed || has_dsf_bit()) save_as_perf_input(mem, len);
     }
 
-    if (!(hnb = has_new_bits(virgin_bits)) && (!dsf_enabled || !dsf_changed)) {
+    if (!must_save && !(hnb = has_new_bits(virgin_bits)) && (!dsf_enabled || !dsf_changed)) {
       if (crash_mode) total_crashes++;
       return 0;
     }    
@@ -4901,8 +4906,9 @@ EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len, int action_id) {
 
   /* This handles FAULT_ERROR for us: */
 
-  // queued_discovered += save_if_interesting(argv, out_buf, len, fault);
-
+  if (chosen_action_id == action_id) {
+    queued_discovered += save_if_interesting(argv, out_buf, len, fault, 1);
+  }
   if (!(stage_cur % stats_update_freq) || stage_cur + 1 == stage_max)
     show_stats();
 
@@ -5378,9 +5384,17 @@ static u8 fuzz_one(char** argv) {
 
   doing_det = 1;
 
+// I'm sorry for this :(
+curr_hash = hash32(out_buf, len, HASH_CONST);
+chosen_action_id = -1;
+start_actions:
+
+
+
   /*********************************************
    * SIMPLE BITFLIP (+dictionary construction) *
    *********************************************/
+
 
 #define FLIP_BIT(_ar, _b) do { \
     u8* _arf = (u8*)(_ar); \
@@ -6354,6 +6368,8 @@ skip_extras:
 
   if (!queue_cur->passed_det) mark_as_det_done(queue_cur);
 
+  chosen_action_id = gen_input(crash_reports, domain_reports, curr_hash, byte_hashes);
+  goto start_actions;
   /****************
    * RANDOM HAVOC *
    ****************/
@@ -7039,7 +7055,7 @@ static void sync_fuzzers(char** argv) {
         if (stop_soon) return;
 
         syncing_party = sd_ent->d_name;
-        queued_imported += save_if_interesting(argv, mem, st.st_size, fault);
+        queued_imported += save_if_interesting(argv, mem, st.st_size, fault, 0);
         syncing_party = 0;
 
         munmap(mem, st.st_size);

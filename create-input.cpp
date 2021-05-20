@@ -1,11 +1,12 @@
 #include <vector>
 #include <set>
 #include <map>
-#include <math>
+#include <cmath>
 #include <numeric>
 #include <algorithm>
 
 using namespace std;
+
 /***
  * ActionIds:
  * 0  - 
@@ -45,6 +46,17 @@ using namespace std;
 std::map<unsigned int, double> weight_map;
 std::set<unsigned int> visited_hashes;
 
+
+// C API
+extern "C" {
+    int gen_input(char crash_reports[], int domain_reports[NUM_ACTIONS][NUM_DOMAINS], unsigned int curr_hash, unsigned int mutated_hash[NUM_ACTIONS]);
+}
+
+int get_advice(int domain_reports[NUM_ACTIONS][NUM_DOMAINS], std::vector<double> &advice);
+int get_mix_prob(const double p_min, std::vector<double> &prob);
+int sample_mutation(const double total_prob, const std::vector<double> &prob);
+
+
 // Everytime this is called, do one iteration of multi-armed bandits
 // Write file into queue location
 // Return 0 if successs, or 1 otherwise
@@ -81,7 +93,7 @@ int gen_input(char crash_reports[], int domain_reports[NUM_ACTIONS][NUM_DOMAINS]
 
     // Compute an exponential weight update
     for (int i = 0; i < NUM_ACTIONS; i++) {
-        weight_map[mutated_hash[i]] = weight_map[mutated_hash[i]] * exp((P_MIN / 2) * advice[j] * (reward_est[j] + GAMMA / prob[j]));
+        weight_map[mutated_hash[i]] = weight_map[mutated_hash[i]] * exp((P_MIN / 2) * advice[i] * (reward_est[i] + GAMMA / prob[i]));
     }
 
     // Add x_t to the seen set
