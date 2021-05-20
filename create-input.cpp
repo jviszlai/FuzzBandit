@@ -164,7 +164,7 @@ int sample_mutation(const double total_prob, const std::vector<double> &prob) {
     }
 
     // Sample an index
-    double sample = rand() / RAND_MAX;
+    double sample = rand() / (1.0 * RAND_MAX);
     int i;
     for (i = 0; i < cumulant.size(); i++) {
         if (sample < cumulant[i]) {

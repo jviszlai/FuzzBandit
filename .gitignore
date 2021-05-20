@@ -20,7 +20,7 @@ afl-showmap
 afl-showdsf
 afl-tmin
 as
-sir_tests/
+fuzzer_tests/sir_tests/
 
 # VSCode stuff
 .vscode/
