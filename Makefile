@@ -73,7 +73,7 @@ reducers.o: reducers.c $(COMM_HDR)
 	$(CC) $(CFLAGS) -c $^
 
 create-input.o: create-input.cpp
-	$(CC) -lstdc++ -lm -c $^
+	$(CC) -g -lstdc++ -lm -c $^
 
 afl-fuzz.o: afl-fuzz.c $(COMM_HDR)
 	$(CC) $(CFLAGS) -c $^ 
