@@ -1,0 +1,6 @@
+DSF update at key=0x000096, val=8 (0x00000008); new aggregate: 8 (0x00000008); earlier was: 0 (0x00000000)
+DSF update at key=0x00038d, val=80 (0x00000050); new aggregate: 80 (0x00000050); earlier was: 0 (0x00000000)
+======== Starting Keys ========
+# DSF map 0
+At key 0x000096, val is 8 (hex=0x00000008)
+At key 0x00038d, val is 80 (hex=0x00000050)
