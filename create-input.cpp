@@ -46,6 +46,9 @@ using namespace std;
 std::map<unsigned int, double> weight_map;
 std::set<unsigned int> visited_hashes;
 
+// Global array of weights on the domain
+double domain_weights[] = {0, 0, 0, 0};
+
 
 // C API
 extern "C" {
@@ -104,10 +107,14 @@ int gen_input(char crash_reports[], int domain_reports[NUM_ACTIONS][NUM_DOMAINS]
 }
 
 // Returns the aggregate score from the domain_reports
-// Create file, call add_to_queue(filename, length, something else that's 0) 
 int get_advice(int domain_reports[NUM_ACTIONS][NUM_DOMAINS], std::vector<double> &advice) {
-    // TODO: implement me
-    return 0;
+    for (int i = 0; i < NUM_ACTIONS; i++) {
+        double aggregate_score = 0;
+        for (int j = 0; j < NUM_DOMAINS; j++) {
+            aggregate_score += domain_weights[j] * domain_reports[i][j];
+        }
+        advice[i] = aggregate_score;
+    }
 }
 
 // Algorithm 2: mixes p_min into prob to improve sampling performance.
