@@ -108,12 +108,20 @@ int gen_input(char crash_reports[], int domain_reports[NUM_ACTIONS][NUM_DOMAINS]
 
 // Returns the aggregate score from the domain_reports
 int get_advice(int domain_reports[NUM_ACTIONS][NUM_DOMAINS], std::vector<double> &advice) {
+    // Compute aggregate score for each action
+    double total_score = 0;
     for (int i = 0; i < NUM_ACTIONS; i++) {
         double aggregate_score = 0;
         for (int j = 0; j < NUM_DOMAINS; j++) {
             aggregate_score += domain_weights[j] * domain_reports[i][j];
         }
         advice[i] = aggregate_score;
+        total_score += aggregate_score;
+    }
+
+    // Normalize the feedback 
+    for (int i = 0; i < NUM_ACTIONS; i++) {
+        advice[i] = advice[i] / total_score;
     }
 }
 
