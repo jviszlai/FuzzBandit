@@ -55,10 +55,24 @@ extern "C" {
     int gen_input(char crash_reports[], int domain_reports[NUM_ACTIONS][NUM_DOMAINS], unsigned int curr_hash, unsigned int mutated_hash[NUM_ACTIONS]);
 }
 
+// Function declarations
 int get_advice(int domain_reports[NUM_ACTIONS][NUM_DOMAINS], std::vector<double> &advice);
 int get_mix_prob(const double p_min, std::vector<double> &prob);
 int sample_mutation(const double total_prob, const std::vector<double> &prob);
 
+// Comparator used to iterate through probabilities by order of magnitude
+struct IndexComparator
+{
+    explicit IndexComparator(const std::vector<double> &values) : values(&values) {}
+
+    bool operator()(size_t a, size_t b)
+    {
+        return (*values)[a] < (*values)[b];
+    }
+
+private:
+    const std::vector<double> *values;
+};
 
 // Everytime this is called, do one iteration of multi-armed bandits
 // Write file into queue location
@@ -103,7 +117,6 @@ int gen_input(char crash_reports[], int domain_reports[NUM_ACTIONS][NUM_DOMAINS]
     visited_hashes.insert(curr_hash);
 
     // Output sampled mutation
-    
     return mutation;
 }
 
@@ -135,8 +148,7 @@ int get_mix_prob(const double p_min, std::vector<double> &prob) {
     // Get indices of prob sorted by magnitude of prob
     std::vector<size_t> indices(prob.size());
     iota(indices.begin(), indices.end(), 0);
-    stable_sort(indices.begin(), indices.end(), 
-        [&prob](size_t a, size_t b){return prob[a] < prob[b];});
+    sort(indices.begin(), indices.end(), IndexComparator(prob));
 
     // Iterate through the probabilities in sorted order
     for (const auto i: indices) {

@@ -24,3 +24,9 @@ fuzzer_tests/sir_tests/
 
 # VSCode stuff
 .vscode/
+
+# C++ stuff
+*.dSYM/
+
+# Some other stuff
+*afl_results/
