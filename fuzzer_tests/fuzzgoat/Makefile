@@ -1,4 +1,4 @@
-CC=/home/jviszlai/Documents/CMSC331/FuzzFactory/afl-clang-fast
+CC=../../afl-clang-fast
 DEPS=main.c fuzzgoat.c
 ASAN=-fsanitize=address
 CFLAGS=-I.
