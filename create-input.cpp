@@ -29,7 +29,6 @@ using namespace std;
  * 14 -
  * 15 -
  ***/
-#define NUM_ACTIONS 1137
 
 /***
  * DomainIds:
@@ -58,11 +57,20 @@ double domain_weights[] = {1};
 // C API
 extern "C"
 {
-    int gen_input(char crash_reports[], int (*domain_reports)[NUM_ACTIONS][NUM_DOMAINS], unsigned int curr_hash, unsigned int mutated_hash[NUM_ACTIONS]);
+    typedef struct mutation {
+        int stage_id;
+        int index;
+        int feedback[NUM_DOMAINS];
+        unsigned int hash;
+        int did_crash;
+        struct mutation *next;
+    } mutation;
+
+    int gen_input(mutation *mutation_list, unsigned int curr_hash);
 }
 
 // Function declarations
-int get_advice(int (*domain_reports)[NUM_ACTIONS][NUM_DOMAINS], std::vector<double> &advice);
+int get_advice(mutation *mutation_list, std::vector<double> &advice);
 int get_mix_prob(const double p_min, std::vector<double> &prob);
 int sample_mutation(const double total_prob, const std::vector<double> &prob);
 
@@ -83,7 +91,7 @@ private:
 // Everytime this is called, do one iteration of multi-armed bandits
 // Write file into queue location
 // Return 0 if successs, or 1 otherwise
-int gen_input(char crash_reports[], int (*domain_reports)[NUM_ACTIONS][NUM_DOMAINS], unsigned int curr_hash, unsigned int mutated_hash[NUM_ACTIONS])
+int gen_input(mutation *mutation_list, unsigned int curr_hash)
 {
     log_file.open(log_file_name, std::ios_base::app);
 
@@ -159,7 +167,7 @@ int gen_input(char crash_reports[], int (*domain_reports)[NUM_ACTIONS][NUM_DOMAI
 }
 
 // Returns the aggregate score from the domain_reports
-int get_advice(int (*domain_reports)[NUM_ACTIONS][NUM_DOMAINS], std::vector<double> &advice)
+int get_advice(mutation, std::vector<double> &advice)
 {
     // Compute aggregate score for each action
     double total_score = 0;
