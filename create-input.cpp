@@ -44,6 +44,7 @@ using namespace std;
 // TODO: actually set the right parameter for GAMMA
 #define P_MIN 0.0001
 #define GAMMA 0.0005
+#define REWARD_SCALE 1000
 
 std::map<unsigned int, double> weight_map;
 std::set<unsigned int> visited_hashes;
@@ -146,7 +147,7 @@ int gen_input(mutation *mutation_list, unsigned int curr_hash)
     curr = mutation_list;
     for (int i = 0; curr; curr = curr->next, i++)
     {
-        reward_est.emplace_back(curr->did_crash / prob[i]);
+        reward_est.emplace_back(REWARD_SCALE * curr->did_crash / prob[i]);
     }
 
     // Compute an exponential weight update
