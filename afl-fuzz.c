@@ -6886,6 +6886,7 @@ havoc_stage:
     mutation *curr = mutation_list;
     mutation_list = mutation_list->next;
     free(curr->file.op_descript);
+    free(curr->file.out_buf);
     free(curr);
   }
 
