@@ -4876,6 +4876,9 @@ abort_trimming:
    a helper function for fuzz_one(). */
 
 EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len, int stage_id, int stage_cur) {
+  // Debugging
+  DEBUG("===================================================================");
+
   mutation *curr_mutate = calloc(1, sizeof(mutation));
   curr_mutate->stage_id = stage_id;
   curr_mutate->index = stage_id * MAX_ACTIONS_PER_STAGE + stage_cur;;
@@ -4908,11 +4911,16 @@ EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len, int stage_id, int
   } else {
       curr_mutate->did_crash = 0;
   }
+  DEBUG("> Outputting dsf stuff");
   for (int j = 0; j < dsf_count; j++) {
       dsf_config* dsf = &dsf_configs[j];    
       int report = 0;
       for (int i = dsf->start; i < dsf->end; i++){
-          report += dsf_map[i];
+        DEBUG(dsf->start);
+        DEBUG(dsf->end);
+        DEBUG(dsf->reducer);
+        DEBUG(dsf_map[i]);
+        report += dsf_map[i];
       }
       curr_mutate->feedback[j] = report;
   }
