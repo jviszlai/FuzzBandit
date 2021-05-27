@@ -17,7 +17,7 @@ using namespace std;
  * 2 - 
  * 3 - 
  ***/
-#define NUM_DOMAINS 6
+#define NUM_DOMAINS 5
 
 // The minimum probability to play
 // TODO: make this a parameter into sample_input?
@@ -73,7 +73,7 @@ private:
 };
 
 // BANDITS VERSION 1 IMPLEMENTATION constants
-double domain_weights[] = {1, 1, 1, 1, 1, 1, };
+double domain_weights[] = {1, 1, 1, 1, 1, };
 std::map<unsigned int, double> expert_weights_1;
 std::set<unsigned int> visited_inputs;
 

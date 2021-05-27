@@ -148,7 +148,7 @@ static s32 forksrv_pid,               /* PID of the fork server           */
 
 EXP_ST u8* trace_bits;                /* SHM with instrumentation bitmap  */
 
-#define NUM_DOMAINS 6
+#define NUM_DOMAINS 5
 
 typedef struct {
   u8 *out_buf;
