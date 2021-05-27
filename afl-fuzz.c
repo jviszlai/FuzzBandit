@@ -168,7 +168,8 @@ typedef struct mutation {
   struct mutation *next;
 } mutation;
 
-int gen_input(mutation *mutation_list, unsigned int curr_hash); /* C API for C++ function */
+int sample_input_1(mutation *mutations, unsigned int curr_input); /* Bandits strategy 1 */
+int sample_input_2(mutation *mutations, unsigned int curr_input); /* Bandits strategy 2 */
 
 #define MAX_ACTIONS_PER_STAGE 100                   /* Max number of actions in a single stage */
 EXP_ST int init_file;                   /* Kinda hacky, need to save initial file */
@@ -6871,9 +6872,9 @@ havoc_stage:
     stage_cycles[STAGE_SPLICE] += stage_max;
   }
 
-  chosen_action_id = gen_input(mutation_list, curr_hash);
-  mutation *curr = mutation_list;
-  for (int i = 0; curr; curr = curr->next, i++) {
+  chosen_action_id = sample_input_1(mutation_list, curr_hash);
+  mutation *curr Bandits strategy 1 *mutations, unsigned int curr_input); /;
+  f* Bandits strategy 2 */or (int i = 0; curr; curr = curr->next, i++) {
     if (i == chosen_action_id) {
       save_if_interesting(curr->file.argv, curr->file.out_buf, curr->file.len, curr->file.fault, 1, curr->file.op_descript);
       DEBUG("Saving stage id: %d\n", curr->stage_id);

@@ -11,26 +11,6 @@
 using namespace std;
 
 /***
- * ActionIds:
- * 0  - 
- * 1  - 
- * 2  - 
- * 3  -
- * 4  -
- * 5  -
- * 6  -
- * 7  -
- * 8  -
- * 9  -
- * 10 -
- * 11 -
- * 12 -
- * 13 -
- * 14 -
- * 15 -
- ***/
-
-/***
  * DomainIds:
  * 0 - Mem
  * 1 - Cmp
@@ -40,20 +20,11 @@ using namespace std;
 #define NUM_DOMAINS 2
 
 // The minimum probability to play
-// TODO: make this a parameter into gen_input?
+// TODO: make this a parameter into sample_input?
 // TODO: actually set the right parameter for GAMMA
 #define P_MIN 0.0001
 #define GAMMA 0.0005
 #define REWARD_SCALE 1000
-
-std::map<unsigned int, double> weight_map;
-std::set<unsigned int> visited_hashes;
-
-static ofstream log_file;
-static std::string log_file_name = "prob_log.txt";
-
-// Global array of weights on the domain
-double domain_weights[] = {1, 10000000000000};
 
 // C API
 extern "C"
@@ -76,18 +47,20 @@ extern "C"
         struct mutation *next;
     } mutation;
 
-    int gen_input(mutation *mutation_list, unsigned int curr_hash);
+    int sample_input_1(mutation *mutations, unsigned int curr_input);
+    int sample_input_2(mutation *mutations, unsigned int curr_input);
 }
 
 // Function declarations
-int get_advice(mutation *mutation_list, std::vector<double> &advice);
-int get_mix_prob(const double p_min, std::vector<double> &prob);
-int sample_mutation(const double total_prob, const std::vector<double> &prob);
+int get_advice_1(mutation *mutations, std::vector<double> &advice);
+int set_min_prob(const double p_min, std::vector<double> &prob);
+int sample(const std::vector<double> &prob);
 
 // Comparator used to iterate through probabilities by order of magnitude
 struct IndexComparator
 {
-    explicit IndexComparator(const std::vector<double> &values) : values(&values) {}
+    explicit IndexComparator(const std::vector<double> &values) 
+        : values(&values) {}
 
     bool operator()(size_t a, size_t b)
     {
@@ -98,37 +71,60 @@ private:
     const std::vector<double> *values;
 };
 
+// BANDITS VERSION 1 IMPLEMENTATION constants
+double domain_weights[] = {1, 10000000000000};
+std::map<unsigned int, double> expert_weights_1;
+std::set<unsigned int> visited_inputs;
+
+// BANDITS VERSION 2 IMPLEMENTATION constants
+std::vector<double> expert_weights_2(NUM_DOMAINS, 1.0);
+
+// Logging
+static ofstream log_file;
+static std::string log_file_name = "prob_log.txt";
+
+
+/* ------------------------------------------------------------------------- */
+
+
+/***
+ * BANDITS VERSION 1 IMPLEMENTATION
+ * --------------------------------
+ * Actions - Mutations from x_t current bit string
+ * Experts - Set of all bit strings
+ * Context - If "a" is an expert such that a = m_j(x_t) for one of the 
+ *           mutations then "a" recommends the aggregate score for m_j(x_t)
+ ***/
+
 // Everytime this is called, do one iteration of multi-armed bandits
 // Write file into queue location
-// Return 0 if successs, or 1 otherwise
-int gen_input(mutation *mutation_list, unsigned int curr_hash)
+int sample_input_1(mutation *mutations, unsigned int curr_input)
 {
-    log_file.open(log_file_name, std::ios_base::app);
+    // log_file.open(log_file_name, std::ios_base::app);
 
-
-    log_file << "================================\n\n\n REPORTS \n\n\n\ ";
-    mutation *curr = mutation_list;
-    while (curr) {
-        log_file << curr->feedback[1] << ", ";
-        curr = curr->next;
-    }
+    // log_file << "================================\n\n\n REPORTS \n\n\n";
+    // mutation *curr = mutations;
+    // while (curr) {
+    //     log_file << curr->feedback[1] << ", ";
+    //     curr = curr->next;
+    // }
 
     // Compute advice
     std::vector<double> advice(0);
-    get_advice(mutation_list, advice);
+    get_advice_1(mutations, advice);
 
     // Compute unmixed probabilities
     std::vector<double> prob(0);
     double total_prob = 0;
     
-    curr = mutation_list;
+    mutation *curr = mutations;
     for (int i = 0; curr; curr = curr->next, i++)
     {
-        if (weight_map.find(curr->hash) == weight_map.end())
+        if (expert_weights_1.find(curr->hash) == expert_weights_1.end())
         {
-            weight_map[curr->hash] = 1;
+            expert_weights_1[curr->hash] = 1;
         }
-        prob.emplace_back(weight_map[curr->hash] * advice[i]);
+        prob.emplace_back(expert_weights_1[curr->hash] * advice[i]);
         total_prob = total_prob + prob[i];
     }
     for (int i = 0; i < prob.size(); i++)
@@ -137,57 +133,58 @@ int gen_input(mutation *mutation_list, unsigned int curr_hash)
     }
 
     // Ensure that all actions are played with p_min
-    get_mix_prob(P_MIN, prob);
+    set_min_prob(P_MIN, prob);
 
     // Sample action
-    int mutation = sample_mutation(total_prob, prob);
+    int sampled_input = sample(prob);
 
     // Compute reward estimator
     std::vector<double> reward_est(0);
-    curr = mutation_list;
+    curr = mutations;
     for (int i = 0; curr; curr = curr->next, i++)
     {
         reward_est.emplace_back(REWARD_SCALE * curr->did_crash / prob[i]);
     }
 
     // Compute an exponential weight update
-    curr = mutation_list;
+    curr = mutations;
     for (int i = 0; curr; curr = curr->next, i++)
     {
-        weight_map[curr->hash] = weight_map[curr->hash] * exp((P_MIN / 2) * advice[i] * (reward_est[i] + GAMMA / prob[i]));
+        expert_weights_1[curr->hash] = expert_weights_1[curr->hash] 
+            * exp((P_MIN / 2) * advice[i] * (reward_est[i] + GAMMA / prob[i]));
     }
 
     // Add x_t to the seen set
-    visited_hashes.insert(curr_hash);
+    visited_inputs.insert(curr_input);
 
-    std::ostringstream oss;
-    log_file << "\n\n\n PROB \n\n\n\ ";
-    std::copy(prob.begin(), prob.end()-1000,
-        std::ostream_iterator<double>(oss, ", "));
+    // std::ostringstream oss;
+    // log_file << "\n\n\n PROB \n\n\n\ ";
+    // std::copy(prob.begin(), prob.end()-1000,
+    //     std::ostream_iterator<double>(oss, ", "));
 
-    log_file << oss.str();
+    // log_file << oss.str();
 
-    std::ostringstream oss2;
-    log_file << "\n\n\n ADVICE \n\n\n\ ";
-    std::copy(advice.begin(), advice.end()-1000,
-        std::ostream_iterator<double>(oss2, ", "));
+    // std::ostringstream oss2;
+    // log_file << "\n\n\n ADVICE \n\n\n\ ";
+    // std::copy(advice.begin(), advice.end()-1000,
+    //     std::ostream_iterator<double>(oss2, ", "));
 
-    log_file << oss2.str();
-    log_file << "\n\n MUTATION \n\n";
-    log_file << mutation;
+    // log_file << oss2.str();
+    // log_file << "\n\n MUTATION \n\n";
+    // log_file << mutation;
 
+    // log_file.close();
 
-    log_file.close();
     // Output sampled mutation
-    return mutation;
+    return sampled_input;
 }
 
 // Returns the aggregate score from the domain_reports
-int get_advice(mutation *mutation_list, std::vector<double> &advice)
+int get_advice_1(mutation *mutations, std::vector<double> &advice)
 {
     // Compute aggregate score for each action
     double total_score = 0;
-    for (mutation *curr = mutation_list; curr; curr = curr->next)
+    for (mutation *curr = mutations; curr; curr = curr->next)
     {
         double aggregate_score = 0;
         for (int j = 0; j < NUM_DOMAINS; j++)
@@ -205,8 +202,134 @@ int get_advice(mutation *mutation_list, std::vector<double> &advice)
     }
 }
 
-// Algorithm 2: mixes p_min into prob to improve sampling performance.
-int get_mix_prob(const double p_min, std::vector<double> &prob)
+
+/* ------------------------------------------------------------------------- */
+
+
+/***
+ * BANDITS VERSION 2 IMPLEMENTATION
+ * --------------------------------
+ * Actions - Mutations from x_t current bit string
+ * Experts - Domain specific feedback sources
+ * Context - If f_i is the i-th source of feedback, then it recommends the 
+ ***/
+
+/**
+ * Implements one round of the contextual bandits algorithm. 
+ */
+int sample_input_2(mutation *mutations, unsigned int curr_input)
+{
+    // Bandit hyperparameters (TODO actually set these)
+    double p_min = 0.0001;
+    double gamma = 0.0005;
+    
+    // Create the advice vector
+    std::vector<std::vector<double>> advice(NUM_DOMAINS, 
+                                            std::vector<double>(0));
+    get_advice_2(mutations, advice);
+
+    // Compute the unmixed probabilities
+    std::vector<double> prob(0);
+    double total_prob = 0;
+    int j = 0;
+    for (mutation *curr = mutations; curr; curr = curr->next, j++) 
+    {
+        double mutation_prob = 0;
+        double total_expert_weight = 0;
+
+        // Compute the mutation probability
+        for (int i = 0; i < NUM_DOMAINS; i++) 
+        {
+            mutation_prob += expert_weights_2[i] * advice[i][j];
+            total_expert_weight += expert_weights_2[i];
+        }
+
+        // Normalize and set the probability
+        mutation_prob = mutation_prob / total_expert_weight;
+        prob.emplace_back(mutation_prob);
+    }
+
+    // Set the minimum probability
+    set_min_prob(p_min, prob);
+
+    // Sample action
+    int sampled_input = sample(prob);
+
+    // Compute the reward estimator
+    std::vector<double> reward_est(0);
+    j = 0; 
+    for (mutation *curr = mutations; curr; curr = curr->next, j++) 
+    {
+        reward_est.emplace_back(curr->did_crash / prob[j]);
+    }
+
+    // Compute the exponential update
+    for (int i = 0; i < NUM_DOMAINS; i++) 
+    {
+        double est_mean = 0;
+        double est_variance = 0;
+
+        // Compute the estimator's mean and variance
+        for (int j = 0; j < prob.size(); j++)
+        {
+            est_mean += advice[i][j] * reward_est[j];
+            est_variance += advice[i][j] / prob[j];
+        }
+
+        // Perform the exponential update
+        expert_weights_2[i] = expert_weights_2[i] 
+                * exp((p_min / 2) * (est_mean + est_variance * gamma));
+    }
+
+    // Output the sampled mutation
+    return sampled_input;
+}
+
+/**
+ * Populates ADVICE[NUM_DOMAINS][num_mutations] such that ADVICE[i][j] contains
+ * the i-th domain value for mutation m_j(x_t). 
+ */
+int get_advice_2(mutation *mutations, 
+                 std::vector<std::vector<double>> &advice) {
+    // Maintain a vector of context normalization values.
+    std::vector<double> totals(NUM_DOMAINS);
+
+    // Compute the unnormalized context vectors and context totals
+    for (mutation *curr = mutations; curr; curr = curr->next)
+    {
+        for (int i = 0; i < NUM_DOMAINS; i++) 
+        {
+            advice[i].emplace_back(curr->feedback[i] * 1.0);
+            totals[i] += curr->feedback[i];
+        }
+    }
+
+    // Normalize the context vectors
+    for (int i = 0; i < NUM_DOMAINS; i++) 
+    {
+        for (int j = 0; j < advice[i].size(); j++) 
+        {
+            advice[i][j] = advice[i][j] / totals[i];
+        }
+    }
+}
+
+
+/* ------------------------------------------------------------------------- */
+
+
+/***
+ * UTILITIES
+ * ---------
+ ***/
+
+/**
+ * Rescales the probabilities ensuring that every index of PROB is at least 
+ * P_MIN. This implements algorithm 2 from Awerbach et. al.
+ * 
+ * PRECONDITION: P_MIN < 1/prob.size()
+ */
+int set_min_prob(const double p_min, std::vector<double> &prob)
 {
     // Rescaling variables
     double delta = 0;
@@ -236,8 +359,10 @@ int get_mix_prob(const double p_min, std::vector<double> &prob)
     }
 }
 
-// Returns the index of a randomly sampled element
-int sample_mutation(const double total_prob, const std::vector<double> &prob)
+/** 
+ * Given the probability vector PROB, samples index i with probability prob[i]. 
+ */
+int sample(const std::vector<double> &prob)
 {
     // Compute the cumulant
     std::vector<double> cumulant(prob.size());
