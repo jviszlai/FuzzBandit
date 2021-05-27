@@ -53,6 +53,7 @@ extern "C"
 
 // Function declarations
 int get_advice_1(mutation *mutations, std::vector<double> &advice);
+int get_advice_2(mutation *mutations, std::vector<double> &advice);
 int set_min_prob(const double p_min, std::vector<double> &prob);
 int sample(const std::vector<double> &prob);
 
