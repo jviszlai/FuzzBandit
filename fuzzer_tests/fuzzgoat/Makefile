@@ -5,7 +5,7 @@ CFLAGS=-I.
 LIBS=-lm
 
 all: $(DEPS)
-	WAYPOINTS=mem,cmp,perf,valid,slow $(CC) -o fuzzgoat $(CFLAGS) $^ $(LIBS)
+	WAYPOINTS=mem,cmp,perf,valid $(CC) -o fuzzgoat $(CFLAGS) $^ $(LIBS)
 	$(CC) $(ASAN) -o fuzzgoat_ASAN $(CFLAGS) $^ $(LIBS)
 
 afl: fuzzgoat
