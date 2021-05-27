@@ -37,13 +37,14 @@ using namespace std;
  * 2 - 
  * 3 - 
  ***/
-#define NUM_DOMAINS 1
+#define NUM_DOMAINS 2
 
 // The minimum probability to play
 // TODO: make this a parameter into gen_input?
 // TODO: actually set the right parameter for GAMMA
 #define P_MIN 0.0001
 #define GAMMA 0.0005
+#define REWARD_SCALE 1000
 
 std::map<unsigned int, double> weight_map;
 std::set<unsigned int> visited_hashes;
@@ -52,17 +53,26 @@ static ofstream log_file;
 static std::string log_file_name = "prob_log.txt";
 
 // Global array of weights on the domain
-double domain_weights[] = {1};
+double domain_weights[] = {1, 10000000000000};
 
 // C API
 extern "C"
 {
+    typedef struct {
+        char *out_buf;
+        int len;
+        char fault;
+        char **argv;
+        char *op_descript;
+    } mutation_buf;
+
     typedef struct mutation {
         int stage_id;
         int index;
         int feedback[NUM_DOMAINS];
         unsigned int hash;
         int did_crash;
+        mutation_buf file;
         struct mutation *next;
     } mutation;
 
@@ -97,24 +107,28 @@ int gen_input(mutation *mutation_list, unsigned int curr_hash)
 
 
     log_file << "================================\n\n\n REPORTS \n\n\n\ ";
-    for (int i = 0; i < 100; i++) {
-        log_file << (*domain_reports)[i][1] << ", ";
+    mutation *curr = mutation_list;
+    while (curr) {
+        log_file << curr->feedback[1] << ", ";
+        curr = curr->next;
     }
 
     // Compute advice
-    std::vector<double> advice(NUM_ACTIONS);
-    get_advice(domain_reports, advice);
+    std::vector<double> advice(0);
+    get_advice(mutation_list, advice);
 
     // Compute unmixed probabilities
-    std::vector<double> prob(NUM_ACTIONS);
+    std::vector<double> prob(0);
     double total_prob = 0;
-    for (int i = 0; i < prob.size(); i++)
+    
+    curr = mutation_list;
+    for (int i = 0; curr; curr = curr->next, i++)
     {
-        if (weight_map.find(mutated_hash[i]) == weight_map.end())
+        if (weight_map.find(curr->hash) == weight_map.end())
         {
-            weight_map[mutated_hash[i]] = 1;
+            weight_map[curr->hash] = 1;
         }
-        prob[i] = weight_map[mutated_hash[i]] * advice[i];
+        prob.emplace_back(weight_map[curr->hash] * advice[i]);
         total_prob = total_prob + prob[i];
     }
     for (int i = 0; i < prob.size(); i++)
@@ -129,16 +143,18 @@ int gen_input(mutation *mutation_list, unsigned int curr_hash)
     int mutation = sample_mutation(total_prob, prob);
 
     // Compute reward estimator
-    std::vector<double> reward_est(NUM_ACTIONS);
-    for (int i = 0; i < reward_est.size(); i++)
+    std::vector<double> reward_est(0);
+    curr = mutation_list;
+    for (int i = 0; curr; curr = curr->next, i++)
     {
-        reward_est[i] = crash_reports[i] / prob[i];
+        reward_est.emplace_back(REWARD_SCALE * curr->did_crash / prob[i]);
     }
 
     // Compute an exponential weight update
-    for (int i = 0; i < NUM_ACTIONS; i++)
+    curr = mutation_list;
+    for (int i = 0; curr; curr = curr->next, i++)
     {
-        weight_map[mutated_hash[i]] = weight_map[mutated_hash[i]] * exp((P_MIN / 2) * advice[i] * (reward_est[i] + GAMMA / prob[i]));
+        weight_map[curr->hash] = weight_map[curr->hash] * exp((P_MIN / 2) * advice[i] * (reward_est[i] + GAMMA / prob[i]));
     }
 
     // Add x_t to the seen set
@@ -167,29 +183,23 @@ int gen_input(mutation *mutation_list, unsigned int curr_hash)
 }
 
 // Returns the aggregate score from the domain_reports
-int get_advice(mutation, std::vector<double> &advice)
+int get_advice(mutation *mutation_list, std::vector<double> &advice)
 {
     // Compute aggregate score for each action
     double total_score = 0;
-    for (int i = 0; i < NUM_ACTIONS; i++)
+    for (mutation *curr = mutation_list; curr; curr = curr->next)
     {
         double aggregate_score = 0;
         for (int j = 0; j < NUM_DOMAINS; j++)
         {
-            aggregate_score += domain_weights[j] * (*domain_reports)[i][j];
-            if ((*domain_reports)[i][j] < 0) {
-                log_file << "\n\nBIG MEME WHY :(\n\n" << (*domain_reports)[i][j];
-            }
+            aggregate_score += domain_weights[j] * curr->feedback[j];
         }
-        if (aggregate_score < 0) {
-            log_file << "\n\nAGGREGATE BIG MEME WHY :(\n\n" << aggregate_score;
-        }
-        advice[i] = aggregate_score;
+        advice.emplace_back(aggregate_score);
         total_score += aggregate_score;
     }
 
     // Normalize the feedback
-    for (int i = 0; i < NUM_ACTIONS; i++)
+    for (int i = 0; i < advice.size(); i++)
     {
         advice[i] = advice[i] / total_score;
     }

@@ -148,22 +148,32 @@ static s32 forksrv_pid,               /* PID of the fork server           */
 
 EXP_ST u8* trace_bits;                /* SHM with instrumentation bitmap  */
 
-#define NUM_DOMAINS 1
+#define NUM_DOMAINS 2
 
+typedef struct {
+  u8 *out_buf;
+  int len;
+  u8 fault;
+  char **argv;
+  char *op_descript;
+} mutation_buf;
 
 typedef struct mutation {
-    int stage_id;
-    int index;
-    int feedback[NUM_DOMAINS];
-    unsigned int hash;
-    int did_crash;
-    struct mutation *next;
+  int stage_id;
+  int index;
+  int feedback[NUM_DOMAINS];
+  unsigned int hash;
+  int did_crash;
+  mutation_buf file;
+  struct mutation *next;
 } mutation;
 
 int gen_input(mutation *mutation_list, unsigned int curr_hash); /* C API for C++ function */
 
 #define MAX_ACTIONS_PER_STAGE 100                   /* Max number of actions in a single stage */
-EXP_ST uint8_t backtracking;           /* Need to go back and recompute correct action - I'm sorry this is disgusting :( */
+EXP_ST int init_file;                   /* Kinda hacky, need to save initial file */
+EXP_ST u8 *init_buf;                    /* Initial file for reset mutation */
+EXP_ST int init_length;
 EXP_ST uint32_t curr_hash;                /* Hash of current bytes */
 EXP_ST int chosen_action_id;          /* Chosen action id from bandit sampling algo */
 EXP_ST mutation *mutation_list;       /* List of mutations per iteration */
@@ -842,12 +852,13 @@ static void add_to_queue(u8* fname, u32 len, u8 passed_det) {
 
   if (q->depth > max_depth) max_depth = q->depth;
 
-  if (queue_top) {
+  // if (queue_top) {
 
-    queue_top->next = q;
-    queue_top = q;
+  //   queue_top->next = q;
+  //   queue_top = q;
 
-  } else q_prev100 = queue = queue_top = q;
+  // } else 
+  q_prev100 = queue = queue_top = q;
 
   queued_paths++;
   pending_not_fuzzed++;
@@ -3355,7 +3366,7 @@ static void save_as_perf_input(void * mem, u32 len) {
    save or queue the input test case for further analysis if so. Returns 1 if
    entry is saved, 0 otherwise. */
 
-static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault, u8 must_save) {
+static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault, u8 must_save, u8 *op_description) {
 
   u8  *fn = "";
   u8  hnb;
@@ -3380,9 +3391,13 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault, u8 must
    
 
 #ifndef SIMPLE_FILES
-
-    fn = alloc_printf("%s/queue/id:%06u,%s%s", out_dir, queued_paths,
+    if (must_save) {
+      fn = alloc_printf("%s/queue/id:%06u,%s%s", out_dir, queued_paths,
+                      op_description, (dsf_enabled && dsf_changed) ? ",+dsf" : "" );
+    } else {
+      fn = alloc_printf("%s/queue/id:%06u,%s%s", out_dir, queued_paths,
                       describe_op(hnb), (dsf_enabled && dsf_changed) ? ",+dsf" : "" );
+    }
 
 #else
 
@@ -4859,21 +4874,20 @@ abort_trimming:
    error conditions, returning 1 if it's time to bail out. This is
    a helper function for fuzz_one(). */
 
-EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len, int stage_id, int stage_cur, int backtracking) {
-  int index = stage_id * MAX_ACTIONS_PER_STAGE + stage_cur;
-  if (backtracking && index != chosen_action_id) {
-      return 1;
-  }
-  mutation *curr_mutate;
-  if (!backtracking) {
-    mutation *curr_mutate = calloc(1, sizeof(mutation));
-    curr_mutate->index = index;
-    if (!mutation_list) {
-        mutation_list = curr_mutate;
-    } else {
-        curr_mutate -> next = mutation_list;
-        mutation_list = curr_mutate;
-    }
+EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len, int stage_id, int stage_cur) {
+  mutation *curr_mutate = calloc(1, sizeof(mutation));
+  curr_mutate->stage_id = stage_id;
+  curr_mutate->index = stage_id * MAX_ACTIONS_PER_STAGE + stage_cur;;
+  curr_mutate->file.out_buf = calloc(len, sizeof(u8));
+  memcpy(curr_mutate->file.out_buf, out_buf, len);
+  curr_mutate->file.len = len;
+  curr_mutate->file.argv = argv;
+
+  if (!mutation_list) {
+      mutation_list = curr_mutate;
+  } else {
+      curr_mutate -> next = mutation_list;
+      mutation_list = curr_mutate;
   }
   u8 fault;
 
@@ -4888,30 +4902,33 @@ EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len, int stage_id, int
 
   fault = run_target(argv, exec_tmout);
   
-  if (!backtracking) {
-    if (fault != FAULT_NONE) {
-        curr_mutate->did_crash = 1;
-    } else {
-        curr_mutate->did_crash = 0;
-    }
-    for (int j = 0; j < dsf_count; j++) {
-        dsf_config* dsf = &dsf_configs[j];    
-        int report = 0;
-        for (int i = dsf->start; i < dsf->end; i++){
-            report += dsf_map[i];
-        }
-        curr_mutate->feedback[j] = report;
-    }
-
-    curr_mutate->hash = hash32(out_buf, len, HASH_CONST);
+  if (fault != FAULT_NONE) {
+      curr_mutate->did_crash = 1;
+  } else {
+      curr_mutate->did_crash = 0;
   }
+  for (int j = 0; j < dsf_count; j++) {
+      dsf_config* dsf = &dsf_configs[j];    
+      int report = 0;
+      for (int i = dsf->start; i < dsf->end; i++){
+          report += dsf_map[i];
+      }
+      curr_mutate->feedback[j] = report;
+  }
+  curr_mutate->feedback[dsf_count] = has_new_bits(virgin_bits);
+  char *op = describe_op(curr_mutate->feedback[dsf_count]);
+  curr_mutate->file.op_descript = calloc(strlen(op) + 1, sizeof(char));
+  strcpy(curr_mutate->file.op_descript, op);
+
+  curr_mutate->hash = hash32(out_buf, len, HASH_CONST);
+  
   if (stop_soon) return 1;
 
   if (fault == FAULT_TMOUT) {
-
+    DEBUG("FAULT GOOD?\n");
     if (subseq_tmouts++ > TMOUT_LIMIT) {
       cur_skipped_paths++;
-      return 1;
+      return 0;
     }
 
   } else subseq_tmouts = 0;
@@ -4928,10 +4945,8 @@ EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len, int stage_id, int
   }
 
   /* This handles FAULT_ERROR for us: */
-
-  if (backtracking) {
-    queued_discovered += save_if_interesting(argv, out_buf, len, fault, 1);
-  }
+  curr_mutate->file.fault = fault;
+  //queued_discovered += save_if_interesting(argv, out_buf, len, fault, 1);
   if (!(stage_cur % stats_update_freq) || stage_cur + 1 == stage_max)
     show_stats();
 
@@ -5354,8 +5369,9 @@ static u8 fuzz_one(char** argv) {
     }
 
     if (stop_soon || res != crash_mode) {
+      DEBUG("crash test %d, %d, %d\n", stop_soon, res, crash_mode);
       cur_skipped_paths++;
-      goto abandon_entry;
+      //goto abandon_entry;
     }
 
   }
@@ -5386,6 +5402,12 @@ static u8 fuzz_one(char** argv) {
 
   memcpy(out_buf, in_buf, len);
 
+  if (init_file) {
+    init_buf = malloc(len * sizeof(char));
+    init_length = len;
+    memcpy(init_buf, out_buf, len);
+    init_file = 0;
+  }
   /*********************
    * PERFORMANCE SCORE *
    *********************/
@@ -5396,25 +5418,25 @@ static u8 fuzz_one(char** argv) {
      this entry ourselves (was_fuzzed), or if it has gone through deterministic
      testing in earlier, resumed runs (passed_det). */
 
-  if (skip_deterministic || queue_cur->was_fuzzed || queue_cur->passed_det)
+  if (skip_deterministic || queue_cur->was_fuzzed || queue_cur->passed_det) {
+    DEBUG("test %d, %d, %d\n", skip_deterministic, queue_cur->was_fuzzed, queue_cur->passed_det);
     goto havoc_stage;
+  }
 
   /* Skip deterministic fuzzing if exec path checksum puts this out of scope
      for this master instance. */
 
-  if (master_max && (queue_cur->exec_cksum % master_max) != master_id - 1)
+  if (master_max && (queue_cur->exec_cksum % master_max) != master_id - 1) 
     goto havoc_stage;
+  
 
   doing_det = 1;
 
-// I'm sorry for this :(
 curr_hash = hash32(out_buf, len, HASH_CONST);
-chosen_action_id = -1;
-backtracking = 0;
 mutation_list = NULL;
-start_actions:
 
-
+  // RESET ACTION
+  if (common_fuzz_stuff(argv, init_buf, init_length, 42, 0)) goto abandon_entry;
 
   /*********************************************
    * SIMPLE BITFLIP (+dictionary construction) *
@@ -5434,8 +5456,6 @@ start_actions:
   stage_name  = "bitflip 1/1";
   int stage_id = 0;
 
-  DEBUG("BIT FLIP MAX: %d\n", stage_max);
-
   stage_val_type = STAGE_VAL_NONE;
 
   orig_hit_cnt = queued_paths + unique_crashes;
@@ -5448,7 +5468,7 @@ start_actions:
 
     FLIP_BIT(out_buf, stage_cur);
 
-    if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur, backtracking)) goto abandon_entry;
+    if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur)) goto abandon_entry;
 
     FLIP_BIT(out_buf, stage_cur);
 
@@ -5542,7 +5562,7 @@ start_actions:
     FLIP_BIT(out_buf, stage_cur);
     FLIP_BIT(out_buf, stage_cur + 1);
 
-    if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur, backtracking)) goto abandon_entry;
+    if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur)) goto abandon_entry;
 
     FLIP_BIT(out_buf, stage_cur);
     FLIP_BIT(out_buf, stage_cur + 1);
@@ -5572,7 +5592,7 @@ start_actions:
     FLIP_BIT(out_buf, stage_cur + 2);
     FLIP_BIT(out_buf, stage_cur + 3);
 
-    if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur, backtracking)) goto abandon_entry;
+    if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur)) goto abandon_entry;
 
     FLIP_BIT(out_buf, stage_cur);
     FLIP_BIT(out_buf, stage_cur + 1);
@@ -5625,7 +5645,7 @@ start_actions:
 
     out_buf[stage_cur] ^= 0xFF;
 
-    if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur, backtracking)) goto abandon_entry;
+    if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur)) goto abandon_entry;
 
     /* We also use this stage to pull off a simple trick: we identify
        bytes that seem to have no effect on the current execution path
@@ -5710,7 +5730,7 @@ start_actions:
 
     *(u16*)(out_buf + i) ^= 0xFFFF;
 
-    if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur, backtracking)) goto abandon_entry;
+    if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur)) goto abandon_entry;
     stage_cur++;
 
     *(u16*)(out_buf + i) ^= 0xFFFF;
@@ -5748,7 +5768,7 @@ start_actions:
 
     *(u32*)(out_buf + i) ^= 0xFFFFFFFF;
 
-    if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur, backtracking)) goto abandon_entry;
+    if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur)) goto abandon_entry;
     stage_cur++;
 
     *(u32*)(out_buf + i) ^= 0xFFFFFFFF;
@@ -5805,7 +5825,7 @@ skip_bitflip:
         stage_cur_val = j;
         out_buf[i] = orig + j;
 
-        if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur, backtracking)) goto abandon_entry;
+        if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur)) goto abandon_entry;
         stage_cur++;
 
       } else stage_max--;
@@ -5817,7 +5837,7 @@ skip_bitflip:
         stage_cur_val = -j;
         out_buf[i] = orig - j;
 
-        if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur, backtracking)) goto abandon_entry;
+        if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur)) goto abandon_entry;
         stage_cur++;
 
       } else stage_max--;
@@ -5877,7 +5897,7 @@ skip_bitflip:
         stage_cur_val = j;
         *(u16*)(out_buf + i) = orig + j;
 
-        if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur, backtracking)) goto abandon_entry;
+        if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur)) goto abandon_entry;
         stage_cur++;
  
       } else stage_max--;
@@ -5887,7 +5907,7 @@ skip_bitflip:
         stage_cur_val = -j;
         *(u16*)(out_buf + i) = orig - j;
 
-        if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur, backtracking)) goto abandon_entry;
+        if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur)) goto abandon_entry;
         stage_cur++;
 
       } else stage_max--;
@@ -5902,7 +5922,7 @@ skip_bitflip:
         stage_cur_val = j;
         *(u16*)(out_buf + i) = SWAP16(SWAP16(orig) + j);
 
-        if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur, backtracking)) goto abandon_entry;
+        if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur)) goto abandon_entry;
         stage_cur++;
 
       } else stage_max--;
@@ -5912,7 +5932,7 @@ skip_bitflip:
         stage_cur_val = -j;
         *(u16*)(out_buf + i) = SWAP16(SWAP16(orig) - j);
 
-        if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur, backtracking)) goto abandon_entry;
+        if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur)) goto abandon_entry;
         stage_cur++;
 
       } else stage_max--;
@@ -5971,7 +5991,7 @@ skip_bitflip:
         stage_cur_val = j;
         *(u32*)(out_buf + i) = orig + j;
 
-        if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur, backtracking)) goto abandon_entry;
+        if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur)) goto abandon_entry;
         stage_cur++;
 
       } else stage_max--;
@@ -5981,7 +6001,7 @@ skip_bitflip:
         stage_cur_val = -j;
         *(u32*)(out_buf + i) = orig - j;
 
-        if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur, backtracking)) goto abandon_entry;
+        if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur)) goto abandon_entry;
         stage_cur++;
 
       } else stage_max--;
@@ -5995,7 +6015,7 @@ skip_bitflip:
         stage_cur_val = j;
         *(u32*)(out_buf + i) = SWAP32(SWAP32(orig) + j);
 
-        if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur, backtracking)) goto abandon_entry;
+        if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur)) goto abandon_entry;
         stage_cur++;
 
       } else stage_max--;
@@ -6005,7 +6025,7 @@ skip_bitflip:
         stage_cur_val = -j;
         *(u32*)(out_buf + i) = SWAP32(SWAP32(orig) - j);
 
-        if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur, backtracking)) goto abandon_entry;
+        if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur)) goto abandon_entry;
         stage_cur++;
 
       } else stage_max--;
@@ -6065,7 +6085,7 @@ skip_arith:
       stage_cur_val = interesting_8[j];
       out_buf[i] = interesting_8[j];
 
-      if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur, backtracking)) goto abandon_entry;
+      if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur)) goto abandon_entry;
 
       out_buf[i] = orig;
       stage_cur++;
@@ -6119,7 +6139,7 @@ skip_arith:
 
         *(u16*)(out_buf + i) = interesting_16[j];
 
-        if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur, backtracking)) goto abandon_entry;
+        if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur)) goto abandon_entry;
         stage_cur++;
 
       } else stage_max--;
@@ -6132,7 +6152,7 @@ skip_arith:
         stage_val_type = STAGE_VAL_BE;
 
         *(u16*)(out_buf + i) = SWAP16(interesting_16[j]);
-        if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur, backtracking)) goto abandon_entry;
+        if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur)) goto abandon_entry;
         stage_cur++;
 
       } else stage_max--;
@@ -6189,7 +6209,7 @@ skip_arith:
 
         *(u32*)(out_buf + i) = interesting_32[j];
 
-        if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur, backtracking)) goto abandon_entry;
+        if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur)) goto abandon_entry;
         stage_cur++;
 
       } else stage_max--;
@@ -6202,7 +6222,7 @@ skip_arith:
         stage_val_type = STAGE_VAL_BE;
 
         *(u32*)(out_buf + i) = SWAP32(interesting_32[j]);
-        if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur, backtracking)) goto abandon_entry;
+        if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur)) goto abandon_entry;
         stage_cur++;
 
       } else stage_max--;
@@ -6269,7 +6289,7 @@ skip_interest:
       last_len = extras[j].len;
       memcpy(out_buf + i, extras[j].data, last_len);
 
-      if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur, backtracking)) goto abandon_entry;
+      if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur)) goto abandon_entry;
 
       stage_cur++;
 
@@ -6314,7 +6334,7 @@ skip_interest:
       /* Copy tail */
       memcpy(ex_tmp + i + extras[j].len, out_buf + i, len - i);
 
-      if (common_fuzz_stuff(argv, ex_tmp, len + extras[j].len, stage_id, stage_cur, backtracking)) {
+      if (common_fuzz_stuff(argv, ex_tmp, len + extras[j].len, stage_id, stage_cur)) {
         ck_free(ex_tmp);
         goto abandon_entry;
       }
@@ -6371,7 +6391,7 @@ skip_user_extras:
       last_len = a_extras[j].len;
       memcpy(out_buf + i, a_extras[j].data, last_len);
 
-      if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur, backtracking)) goto abandon_entry;
+      if (common_fuzz_stuff(argv, out_buf, len, stage_id, stage_cur)) goto abandon_entry;
 
       stage_cur++;
 
@@ -6395,26 +6415,12 @@ skip_extras:
 
   if (!queue_cur->passed_det) mark_as_det_done(queue_cur);
 
-  if (!backtracking) {
-    chosen_action_id = gen_input(mutation_list, curr_hash);
-
-    //  Empty mutation list
-    while (mutation_list) {
-        mutation *curr = mutation_list;
-        mutation_list = mutation_list->next;
-        free(curr);
-    }
-
-    backtracking = 1;
-    DEBUG("Chosen action id: %d\n", chosen_action_id);
-    goto start_actions;
-  }
+  
   /****************
    * RANDOM HAVOC *
    ****************/
 
 havoc_stage:
-goto abandon_entry;
 
   stage_cur_byte = -1;
 
@@ -6441,6 +6447,7 @@ goto abandon_entry;
 
   }
 
+  stage_id = 15;
   if (stage_max < HAVOC_MIN) stage_max = HAVOC_MIN;
 
   temp_len = len;
@@ -6451,16 +6458,16 @@ goto abandon_entry;
 
   /* We essentially just do several thousand runs (depending on perf_score)
      where we take the input file and make random stacked tweaks. */
-
+  stage_max = 15 + ((extras_cnt + a_extras_cnt) ? 2 : 0); // bandit mod
   for (stage_cur = 0; stage_cur < stage_max; stage_cur++) {
 
-    u32 use_stacking = 1 << (1 + UR(HAVOC_STACK_POW2));
+    u32 use_stacking = 1; //bandit mod of 1 << (1 + UR(HAVOC_STACK_POW2));
 
     stage_cur_val = use_stacking;
  
     for (i = 0; i < use_stacking; i++) {
 
-      switch (UR(15 + ((extras_cnt + a_extras_cnt) ? 2 : 0))) {
+      switch (stage_cur) {// bandit mod of: UR(15 + ((extras_cnt + a_extras_cnt) ? 2 : 0))) {
 
         case 0:
 
@@ -6665,18 +6672,18 @@ goto abandon_entry;
           u8  actually_clone = UR(4);
           u32 clone_from, clone_to, clone_len;
 
-          if (actually_clone) {
+          // if (actually_clone) {
 
-            clone_len  = choose_block_len(temp_len);
-            clone_from = UR(temp_len - clone_len + 1);
+          //   clone_len  = choose_block_len(temp_len);
+          //   clone_from = UR(temp_len - clone_len + 1);
 
-          } else {
+          // } else {
 
-            clone_len = choose_block_len(HAVOC_BLK_XL);
-            clone_from = 0;
+          //   clone_len = choose_block_len(HAVOC_BLK_XL);
+          //   clone_from = 0;
 
-          }
-
+          // }
+          clone_len = len + 1;
           if (temp_len + clone_len >= max_file_len) break;
 
           clone_to   = UR(temp_len);
@@ -6828,7 +6835,7 @@ goto abandon_entry;
 
     }
 
-    if (common_fuzz_stuff(argv, out_buf, temp_len))
+    if (common_fuzz_stuff(argv, out_buf, temp_len, stage_id, stage_cur))
       goto abandon_entry;
 
     /* out_buf might have been mangled a bit, so let's restore it to its
@@ -6863,6 +6870,28 @@ goto abandon_entry;
     stage_finds[STAGE_SPLICE]  += new_hit_cnt - orig_hit_cnt;
     stage_cycles[STAGE_SPLICE] += stage_max;
   }
+
+  chosen_action_id = gen_input(mutation_list, curr_hash);
+  mutation *curr = mutation_list;
+  for (int i = 0; curr; curr = curr->next, i++) {
+    if (i == chosen_action_id) {
+      save_if_interesting(curr->file.argv, curr->file.out_buf, curr->file.len, curr->file.fault, 1, curr->file.op_descript);
+      DEBUG("Saving stage id: %d\n", curr->stage_id);
+      break;
+    }
+  }
+
+  //  Empty mutation list
+  while (mutation_list) {
+    mutation *curr = mutation_list;
+    mutation_list = mutation_list->next;
+    free(curr->file.op_descript);
+    free(curr->file.out_buf);
+    free(curr);
+  }
+
+  DEBUG("Chosen action id: %d\n", chosen_action_id);
+  goto abandon_entry;
 
 #ifndef IGNORE_FINDS
 
@@ -7094,7 +7123,7 @@ static void sync_fuzzers(char** argv) {
         if (stop_soon) return;
 
         syncing_party = sd_ent->d_name;
-        queued_imported += save_if_interesting(argv, mem, st.st_size, fault, 0);
+        queued_imported += save_if_interesting(argv, mem, st.st_size, fault, 0, "");
         syncing_party = 0;
 
         munmap(mem, st.st_size);
@@ -8400,7 +8429,7 @@ int main(int argc, char** argv) {
     start_time += 4000;
     if (stop_soon) goto stop_fuzzing;
   }
-
+  init_file = 1;
   while (1) {
 
     u8 skipped_fuzz;
@@ -8460,7 +8489,7 @@ int main(int argc, char** argv) {
     current_entry++;
 
   }
-
+  free(init_file);
   if (queue_cur) show_stats();
 
   write_bitmap();
