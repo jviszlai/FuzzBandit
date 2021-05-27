@@ -4916,10 +4916,17 @@ EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len, int stage_id, int
       dsf_config* dsf = &dsf_configs[j];    
       int report = 0;
       for (int i = dsf->start; i < dsf->end; i++){
-        DEBUG(dsf->start);
-        DEBUG(dsf->end);
-        DEBUG(dsf->reducer);
-        DEBUG(dsf_map[i]);
+        // Create debug strings
+        char debug_line[1000];
+        sprintf(debug_line, "start: %d\n", dsf->start);
+
+        // Print out debugging stuff
+        // DEBUG(dsf->start);
+        // DEBUG(dsf->end);
+        // DEBUG(dsf->reducer);
+        // DEBUG(dsf_map[i]);
+
+        DEBUG(debug_line);
         report += dsf_map[i];
       }
       curr_mutate->feedback[j] = report;
