@@ -148,7 +148,7 @@ static s32 forksrv_pid,               /* PID of the fork server           */
 
 EXP_ST u8* trace_bits;                /* SHM with instrumentation bitmap  */
 
-#define NUM_DOMAINS 2
+#define NUM_DOMAINS 6
 
 typedef struct {
   u8 *out_buf;
@@ -4926,7 +4926,7 @@ EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len, int stage_id, int
   if (stop_soon) return 1;
 
   if (fault == FAULT_TMOUT) {
-    DEBUG("FAULT GOOD?\n");
+    // DEBUG("FAULT GOOD?\n");
     if (subseq_tmouts++ > TMOUT_LIMIT) {
       cur_skipped_paths++;
       return 0;
