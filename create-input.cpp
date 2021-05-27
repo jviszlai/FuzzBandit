@@ -17,7 +17,7 @@ using namespace std;
  * 2 - 
  * 3 - 
  ***/
-#define NUM_DOMAINS 5
+#define NUM_DOMAINS 4
 
 // The minimum probability to play
 // TODO: make this a parameter into sample_input?
@@ -73,7 +73,7 @@ private:
 };
 
 // BANDITS VERSION 1 IMPLEMENTATION constants
-double domain_weights[] = {1, 1, 1, 1, 1, };
+double domain_weights[] = {1, 1, 1, 1, };
 std::map<unsigned int, double> expert_weights_1;
 std::set<unsigned int> visited_inputs;
 
@@ -82,7 +82,7 @@ std::vector<double> expert_weights_2(NUM_DOMAINS, 1.0);
 
 // Logging
 static ofstream log_file;
-static std::string log_file_name = "prob_log.txt";
+static std::string log_file_name = "bandits.log";
 
 
 /* ------------------------------------------------------------------------- */
@@ -97,11 +97,14 @@ static std::string log_file_name = "prob_log.txt";
  *           mutations then "a" recommends the aggregate score for m_j(x_t)
  ***/
 
-// Everytime this is called, do one iteration of multi-armed bandits
-// Write file into queue location
+/**
+ * Implements one round of the contextual bandits algorithm. 
+ */
 int sample_input_1(mutation *mutations, unsigned int curr_input)
 {
-    // log_file.open(log_file_name, std::ios_base::app);
+    // Logging
+    log_file.open(log_file_name, std::ios_base::app);
+    log_file << "========================================================\n\n";
 
     // log_file << "================================\n\n\n REPORTS \n\n\n";
     // mutation *curr = mutations;
@@ -174,7 +177,9 @@ int sample_input_1(mutation *mutations, unsigned int curr_input)
     // log_file << "\n\n MUTATION \n\n";
     // log_file << mutation;
 
-    // log_file.close();
+    // Close logging
+    log_file << "\n";
+    log_file.close();
 
     // Output sampled mutation
     return sampled_input;
@@ -188,10 +193,14 @@ int get_advice_1(mutation *mutations, std::vector<double> &advice)
     for (mutation *curr = mutations; curr; curr = curr->next)
     {
         double aggregate_score = 0;
+        log_file << "Feedback: [";
         for (int j = 0; j < NUM_DOMAINS; j++)
         {
             aggregate_score += domain_weights[j] * curr->feedback[j];
+            log_file << curr->feedback[j];
+            log_file << ", ";
         }
+        log_file << "]\n";
         advice.emplace_back(aggregate_score);
         total_score += aggregate_score;
     }
