@@ -6873,8 +6873,8 @@ havoc_stage:
   }
 
   chosen_action_id = sample_input_1(mutation_list, curr_hash);
-  mutation *curr Bandits strategy 1 *mutations, unsigned int curr_input); /;
-  f* Bandits strategy 2 */or (int i = 0; curr; curr = curr->next, i++) {
+  mutation *curr = mutation_list;
+  for (int i = 0; curr; curr = curr->next, i++) {
     if (i == chosen_action_id) {
       save_if_interesting(curr->file.argv, curr->file.out_buf, curr->file.len, curr->file.fault, 1, curr->file.op_descript);
       DEBUG("Saving stage id: %d\n", curr->stage_id);
