@@ -140,6 +140,18 @@ mutation *sample_mutation(mutation *mutations, mutation *sentinel)
            << ", uniform = " 
            << (1 / (1.0 * mut_size)) 
            << "\n";
+    log_fd << "[ITERATION "
+           << time_step
+           << "]: logging gamma quantities\n"
+           << "\t log-term: "
+           << log(NUM_DOMAINS / delta)
+           << "\n\t denominator: "
+           << (mut_size * time_horizon * 1.0)
+           << "\n\t divided: "
+           << log(NUM_DOMAINS / delta) / (mut_size * time_horizon * 1.0)
+           << "\n\t sqrt-rootd: "
+           << sqrt(log(NUM_DOMAINS / delta) / (mut_size * time_horizon * 1.0))
+           << "\n";
 
     // Set the minimum probability
     set_min_prob(p_min, prob);

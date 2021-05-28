@@ -2681,7 +2681,17 @@ static void write_to_testcase(void* mem, u32 len) {
 
     if (fd < 0) PFATAL("Unable to create '%s'", out_file);
 
-  } else lseek(fd, 0, SEEK_SET);
+  } else {
+
+    lseek(fd, 0, SEEK_SET);
+  
+  }
+
+  // BANDITS: debug by doing some logging
+  DEBUG("[BANDITS DEBUG]: writing testcase...");
+  DEBUG("\tfd = %d", fd);
+  DEBUG("\tmem ptr = 0x%", (uintptr_t) mem);
+  DEBUG("\twrt len = %d", len);
 
   ck_write(fd, mem, len, out_file);
 
