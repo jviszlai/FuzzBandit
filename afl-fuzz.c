@@ -2688,10 +2688,10 @@ static void write_to_testcase(void* mem, u32 len) {
   }
 
   // BANDITS: debug by doing some logging
-  DEBUG("[BANDITS DEBUG]: writing testcase...");
-  DEBUG("\tfd = %d", fd);
-  DEBUG("\tmem ptr = 0x%", (uintptr_t) mem);
-  DEBUG("\twrt len = %d", len);
+  // DEBUG("[BANDITS DEBUG]: writing testcase...\n");
+  // DEBUG("\tfd = %d\n", fd);
+  // DEBUG("\tmem ptr = 0x%\n", (uintptr_t) mem);
+  // DEBUG("\twrt len = %d\n", len);
 
   ck_write(fd, mem, len, out_file);
 
