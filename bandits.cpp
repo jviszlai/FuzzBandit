@@ -133,7 +133,9 @@ mutation *sample_mutation(mutation *mutations, mutation *sentinel)
     const double gamma = sqrt(log(NUM_DOMAINS / delta) / (mut_size * time_horizon * 1.0));
     log_fd << "[ITERATION " 
            << time_step 
-           << "]: p_min = " 
+           << "]: gamma = "
+           << gamma
+           << ", p_min = " 
            << p_min 
            << ", uniform = " 
            << (1 / (1.0 * mut_size)) 
@@ -174,6 +176,17 @@ mutation *sample_mutation(mutation *mutations, mutation *sentinel)
 
         // Perform the exponential update
         expert_weights[i] = expert_weights[i] * exp((p_min / 2) * (est_mean + est_variance * gamma));
+
+        log_fd << "[ITERATION " << time_step << "]: est_mean = "
+               << est_mean
+               << ", est_variance = "
+               << est_variance
+               << "\n";
+        log_fd << "[ITERATION " << time_step << "]: updating expert "
+               << i
+               << "'s weight = "
+               << exp((p_min / 2) * (est_mean + est_variance * gamma))
+               << "\n";
     }
 
     // If the weights are too large, rescale w.r.t. the min-weight
