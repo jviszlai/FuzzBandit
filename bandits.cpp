@@ -7,6 +7,7 @@
 #include <fstream>
 #include <sstream>
 #include <iterator>
+#include <cstdint>
 
 using namespace std;
 
@@ -22,24 +23,16 @@ using namespace std;
 // C API
 extern "C"
 {
-    typedef struct
-    {
-        char *out_buf;
-        int len;
-        char fault;
-        char **argv;
-        char *op_descript;
-    } mutation_buf;
-
+    /* Struct containing data for a mutation in a round of fuzzing */
     typedef struct mutation
     {
-        int stage_id;
-        int index;
-        int feedback[NUM_DOMAINS];
-        unsigned int hash;
-        int did_crash;
-        mutation_buf file;
-        struct mutation *next;
+        char **argv;                           /* argv for the input. */
+        int input_len;                         /* length of the buffer. */
+        std::uint8_t *input_buffer;            /* buffer containing the input contents. */
+        int fault_bit;                         /* whether or not this mutation crashed. */
+        std::uint8_t fault_type;               /* the type of fault. See enum above. */
+        std::uint32_t dsf_scores[NUM_DOMAINS]; /* domain specific scores. */
+        struct mutation *next;                 /* next mutation in the linked list. */
     } mutation;
 
     mutation* sample_mutation(mutation *mutations);
@@ -129,7 +122,7 @@ mutation* sample_mutation(mutation *mutations)
     j = 0;
     for (mutation *curr = mutations; curr; curr = curr->next, j++)
     {
-        reward_est.emplace_back(curr->did_crash / prob[j]);
+        reward_est.emplace_back(curr->fault_bit / prob[j]);
     }
 
     // Compute the exponential update
@@ -168,8 +161,8 @@ int get_advice(mutation *mutations,
     {
         for (int i = 0; i < NUM_DOMAINS; i++)
         {
-            advice[i].emplace_back(curr->feedback[i] * 1.0);
-            totals[i] += curr->feedback[i];
+            advice[i].emplace_back(curr->dsf_scores[i] * 1.0);
+            totals[i] += curr->dsf_scores[i];
         }
     }
 

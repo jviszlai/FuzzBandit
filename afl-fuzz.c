@@ -356,9 +356,9 @@ typedef struct mutation {
   u8 *input_buffer;            /* buffer containing the input contents. */
   int fault_bit;               /* whether or not this mutation crashed. */
   u8 fault_type;               /* the type of fault. See enum above. */
-  int dsf_scores[NUM_DOMAINS]; /* domain specific scores. */
+  u32 dsf_scores[NUM_DOMAINS]; /* domain specific scores. */
   struct mutation *next;       /* next mutation in the linked list. */
-} mutation;                    
+} mutation;
 
 EXP_ST mutation *mutation_list;     /* List of mutations per iteration. */
 EXP_ST mutation *mutation_sentinel; /* The end of the mutation list. */
