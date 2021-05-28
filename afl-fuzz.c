@@ -5512,9 +5512,9 @@ static u8 fuzz_one(char** argv) {
   s32 len, fd, temp_len, i, j;
   u8  *in_buf, *out_buf, *orig_in, *ex_tmp, *eff_map = 0;
   u64 havoc_queued,  orig_hit_cnt, new_hit_cnt;
-  u32 splice_cycle = 0, perf_score = 100, orig_perf, prev_cksum, eff_cnt = 1;
+  u32 splice_cycle = 0, perf_score = 100, prev_cksum, eff_cnt = 1;
 
-  u8  ret_val = 1, doing_det = 0;
+  u8  ret_val = 1;
 
   u8  a_collect[MAX_AUTO_EXTRA];
   u32 a_len = 0;
@@ -5657,7 +5657,7 @@ static u8 fuzz_one(char** argv) {
    * PERFORMANCE SCORE *
    *********************/
 
-  orig_perf = perf_score = calculate_score(queue_cur);
+  perf_score = calculate_score(queue_cur);
 
   /* Skip right away if -d is given, if we have done deterministic fuzzing on
      this entry ourselves (was_fuzzed), or if it has gone through deterministic
@@ -5671,8 +5671,6 @@ static u8 fuzz_one(char** argv) {
 
   if (master_max && (queue_cur->exec_cksum % master_max) != master_id - 1)
     goto havoc_stage;
-
-  doing_det = 1;
 
   /*********************************************
    * SIMPLE BITFLIP (+dictionary construction) *
@@ -6653,7 +6651,7 @@ havoc_stage:
 
   /* BANDITS: just do one round of havoc. */
 
-  stage_max = stage_max = 15 + ((extras_cnt + a_extras_cnt) ? 2 : 0);
+  stage_max = 15 + ((extras_cnt + a_extras_cnt) ? 2 : 0);
 
   temp_len = len;
 
