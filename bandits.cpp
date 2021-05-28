@@ -128,30 +128,31 @@ mutation *sample_mutation(mutation *mutations, mutation *sentinel)
     {
         time_horizon *= 2;
     }
-    const double delta = 2.0; // yeah ofc...
+    const double delta = 2.0; // this should definitely be < NUM_DOMAINS
     const double p_min = min(sqrt(log(NUM_DOMAINS) / (mut_size * time_horizon * 1.0)), 1 / (1.0 * mut_size));
     const double gamma = sqrt(log(NUM_DOMAINS / delta) / (mut_size * time_horizon * 1.0));
-    log_fd << "[ITERATION " 
-           << time_step 
-           << "]: gamma = "
-           << gamma
-           << ", p_min = " 
-           << p_min 
-           << ", uniform = " 
-           << (1 / (1.0 * mut_size)) 
-           << "\n";
-    log_fd << "[ITERATION "
-           << time_step
-           << "]: logging gamma quantities\n"
-           << "- log-term: "
-           << log(NUM_DOMAINS / delta)
-           << "\n- denominator: "
-           << (mut_size * time_horizon * 1.0)
-           << "\n- divided: "
-           << log(NUM_DOMAINS / delta) / (mut_size * time_horizon * 1.0)
-           << "\n- sqrt-rootd: "
-           << sqrt(log(NUM_DOMAINS / delta) / (mut_size * time_horizon * 1.0))
-           << "\n";
+    
+    // log_fd << "[ITERATION " 
+    //        << time_step 
+    //        << "]: gamma = "
+    //        << gamma
+    //        << ", p_min = " 
+    //        << p_min 
+    //        << ", uniform = " 
+    //        << (1 / (1.0 * mut_size)) 
+    //        << "\n";
+    // log_fd << "[ITERATION "
+    //        << time_step
+    //        << "]: logging gamma quantities\n"
+    //        << "- log-term: "
+    //        << log(NUM_DOMAINS / delta)
+    //        << "\n- denominator: "
+    //        << (mut_size * time_horizon * 1.0)
+    //        << "\n- divided: "
+    //        << log(NUM_DOMAINS / delta) / (mut_size * time_horizon * 1.0)
+    //        << "\n- sqrt-rootd: "
+    //        << sqrt(log(NUM_DOMAINS / delta) / (mut_size * time_horizon * 1.0))
+    //        << "\n";
 
     // Set the minimum probability
     set_min_prob(p_min, prob);
@@ -166,12 +167,6 @@ mutation *sample_mutation(mutation *mutations, mutation *sentinel)
     {
         reward_est.emplace_back(curr->fault_bit / prob[j]);
     }
-
-    // Log the weights before...
-    log_fd << "[ITERATION " << time_step << "]: weights = {";
-    std::ostream_iterator<double> wt_iter_tmp(log_fd, ", ");
-    std::copy(expert_weights.begin(), expert_weights.end(), wt_iter_tmp);
-    log_fd << "}\n";
 
     // Compute the exponential update
     for (int i = 0; i < NUM_DOMAINS; i++)
@@ -189,21 +184,11 @@ mutation *sample_mutation(mutation *mutations, mutation *sentinel)
         // Perform the exponential update
         expert_weights[i] = expert_weights[i] * exp((p_min / 2) * (est_mean + est_variance * gamma));
 
-        log_fd << "[ITERATION " << time_step << "]: est_mean = "
-               << est_mean
-               << ", est_variance = "
-               << est_variance
-               << "\n";
-        log_fd << "[ITERATION " << time_step << "]: updating expert "
-               << i
-               << "'s weight = "
-               << exp((p_min / 2) * (est_mean + est_variance * gamma))
-               << "\n";
     }
 
     // If the weights are too large, rescale w.r.t. the min-weight
     if (*max_element(expert_weights.begin(), expert_weights.end()) > MAX_WEIGHT) {
-        log_fd << "[ITERATION " << time_step << "]: rescaling weights!";
+        log_fd << "[ITERATION " << time_step << "]: rescaling weights!\n";
         rescale_weights();
     }
 
