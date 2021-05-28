@@ -128,7 +128,7 @@ mutation *sample_mutation(mutation *mutations, mutation *sentinel)
     {
         time_horizon *= 2;
     }
-    const double delta = 10.0;
+    const double delta = 2.0; // yeah ofc...
     const double p_min = min(sqrt(log(NUM_DOMAINS) / (mut_size * time_horizon * 1.0)), 1 / (1.0 * mut_size));
     const double gamma = sqrt(log(NUM_DOMAINS / delta) / (mut_size * time_horizon * 1.0));
     log_fd << "[ITERATION " 
@@ -143,13 +143,13 @@ mutation *sample_mutation(mutation *mutations, mutation *sentinel)
     log_fd << "[ITERATION "
            << time_step
            << "]: logging gamma quantities\n"
-           << "\t log-term: "
+           << "- log-term: "
            << log(NUM_DOMAINS / delta)
-           << "\n\t denominator: "
+           << "\n- denominator: "
            << (mut_size * time_horizon * 1.0)
-           << "\n\t divided: "
+           << "\n- divided: "
            << log(NUM_DOMAINS / delta) / (mut_size * time_horizon * 1.0)
-           << "\n\t sqrt-rootd: "
+           << "\n- sqrt-rootd: "
            << sqrt(log(NUM_DOMAINS / delta) / (mut_size * time_horizon * 1.0))
            << "\n";
 
