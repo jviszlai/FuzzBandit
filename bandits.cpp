@@ -19,6 +19,7 @@ using namespace std;
  * 3 - 
  ***/
 #define NUM_DOMAINS 4
+#define MAX_WEIGHT 10
 
 // C API
 extern "C"
@@ -43,6 +44,7 @@ int get_advice(std::vector<std::vector<double>> &advice, mutation *mutations, mu
 int set_min_prob(const double p_min, std::vector<double> &prob);
 int sample(const std::vector<double> &prob);
 mutation *select_mutation(int index, mutation *mutations, mutation *sentinel);
+int rescale_weights();
 
 // Comparator used to iterate through probabilities by order of magnitude
 struct IndexComparator
@@ -166,6 +168,12 @@ mutation *sample_mutation(mutation *mutations, mutation *sentinel)
 
         // Perform the exponential update
         expert_weights[i] = expert_weights[i] * exp((p_min / 2) * (est_mean + est_variance * gamma));
+    }
+
+    // If the weights are too large, rescale w.r.t. the min-weight
+    if (*max_element(expert_weights.begin(), expert_weights.end()) > MAX_WEIGHT) {
+        log_fd << "[ITERATION " << time_step << "]: rescaling weights!";
+        rescale_weights();
     }
 
     // Close logging
@@ -298,4 +306,15 @@ mutation* select_mutation(int index, mutation *mutations, mutation *sentinel)
         }
     }
     return cur;
+}
+
+/** 
+ * Scales back the weights relative to the min-entry. 
+ */
+int rescale_weights() {
+    double min_wt = *min_element(expert_weights.begin(), expert_weights.end()); 
+    for (int i = 0; i < expert_weights.size(); i++) {
+        expert_weights[i] = expert_weights[i] / min_wt;
+    }
+    return 0;
 }
