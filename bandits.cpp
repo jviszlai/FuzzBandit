@@ -153,6 +153,12 @@ mutation *sample_mutation(mutation *mutations, mutation *sentinel)
         reward_est.emplace_back(curr->fault_bit / prob[j]);
     }
 
+    // Log the weights before...
+    log_fd << "[ITERATION " << time_step << "]: weights = {";
+    std::ostream_iterator<double> wt_iter(log_fd, ", ");
+    std::copy(expert_weights.begin(), expert_weights.end(), wt_iter);
+    log_fd << "}\n";
+
     // Compute the exponential update
     for (int i = 0; i < NUM_DOMAINS; i++)
     {
@@ -176,11 +182,13 @@ mutation *sample_mutation(mutation *mutations, mutation *sentinel)
         rescale_weights();
     }
 
-    // Close logging
+    // Log the current weights
     log_fd << "[ITERATION " << time_step << "]: weights = {";
     std::ostream_iterator<double> wt_iter(log_fd, ", ");
     std::copy(expert_weights.begin(), expert_weights.end(), wt_iter);
     log_fd << "}\n";
+
+    // Close logging
     log_fd.close();
 
     // Increment iteration count
