@@ -3377,7 +3377,8 @@ static u8 save_to_queue(char** argv, void* mem, u32 len, u8 fault) {
 
 #endif /* ^!SIMPLE_FILES */
 
-  DEBUG("adding %s to queue\n", fn);
+  DEBUG("[BANDITS DEBUG]: adding %s to queue\n", fn);
+  DEBUG("[BANDITS DEBUG]: using filename %s", fn);
 
   add_to_queue(fn, len, 0);
 
@@ -5575,6 +5576,8 @@ static u8 fuzz_one(char** argv) {
     fflush(stdout);
   }
 
+  DEBUG("[BANDITS DEBUG]: opening %s", queue_cur->fname);
+
   /* Map the test case into memory. */
 
   fd = open(queue_cur->fname, O_RDONLY);
@@ -7092,6 +7095,8 @@ havoc_stage:
 
   /* BANDITS: sample a mutation to keep and skip splicing. */
 
+  DEBUG("[BANDITS DEBUG] entering bandits code...");
+
   mutation* sampled_mut = sample_mutation(mutation_list, mutation_sentinel);
   save_to_queue(sampled_mut->argv, sampled_mut->input_buffer, sampled_mut->input_len, sampled_mut->fault_type);
 
@@ -7219,7 +7224,7 @@ abandon_entry:
   }
 
   /* BANDITS: then free the sentinel. */
-  
+
   ck_free(mutation_sentinel);
 
   return ret_val;
