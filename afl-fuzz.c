@@ -3409,10 +3409,6 @@ static u8 save_to_queue(char** argv, void* mem, u32 len, u8 fault) {
   ck_write(fd, mem, len, fn);
   close(fd);
 
-  /* BANDITS: free the filename. */
-
-  // ck_free(fn);
-
   /* BANDITS: return that the input was added to the queue. */
 
   return 1;

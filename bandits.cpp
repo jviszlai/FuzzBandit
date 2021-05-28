@@ -61,10 +61,11 @@ private:
 
 // Expert weights maintained by this implementation
 std::vector<double> expert_weights(NUM_DOMAINS, 1.0);
+int iteration = 0;
 
 // Logging
-static ofstream log_file;
-static std::string log_file_name = "bandits.log";
+static ofstream log_fd;
+static std::string log_fn = "afl_results/bandits.log";
 
 /* ------------------------------------------------------------------------- */
 
@@ -81,6 +82,9 @@ static std::string log_file_name = "bandits.log";
  */
 mutation *sample_mutation(mutation *mutations, mutation *sentinel)
 {
+    // Open logging
+    log_fd.open(log_fn, ios_base::app);
+
     // Bandit hyperparameters (TODO actually set these)
     double p_min = 0.0001;
     double gamma = 0.0005;
@@ -141,6 +145,13 @@ mutation *sample_mutation(mutation *mutations, mutation *sentinel)
         // Perform the exponential update
         expert_weights[i] = expert_weights[i] * exp((p_min / 2) * (est_mean + est_variance * gamma));
     }
+
+    // Close logging
+    log_fd << "[ITERATION " << iteration << "]: weights = {";
+    std::ostream_iterator<double> wt_iter(log_fd, ", ");
+    std::copy(expert_weights.begin(), expert_weights.end(), wt_iter);
+    log_fd << "}\n";
+    log_fd.close();
 
     // Output the sampled mutation
     return select_mutation(sampled_input, mutations, sentinel);
