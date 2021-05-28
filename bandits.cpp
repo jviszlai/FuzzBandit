@@ -26,23 +26,23 @@ extern "C"
     /* Struct containing data for a mutation in a round of fuzzing */
     typedef struct mutation
     {
-        char **argv;                           /* argv for the input. */
-        int input_len;                         /* length of the buffer. */
-        std::uint8_t *input_buffer;            /* buffer containing the input contents. */
-        int fault_bit;                         /* whether or not this mutation crashed. */
-        std::uint8_t fault_type;               /* the type of fault. See enum above. */
-        std::uint32_t dsf_scores[NUM_DOMAINS]; /* domain specific scores. */
-        struct mutation *next;                 /* next mutation in the linked list. */
+        char **argv;                      /* argv for the input. */
+        int input_len;                    /* length of the buffer. */
+        uint8_t *input_buffer;            /* buffer containing the input contents. */
+        int fault_bit;                    /* whether or not this mutation crashed. */
+        uint8_t fault_type;               /* the type of fault. See enum above. */
+        uint32_t dsf_scores[NUM_DOMAINS]; /* domain specific scores. */
+        struct mutation *next;            /* next mutation in the linked list. */
     } mutation;
 
-    mutation* sample_mutation(mutation *mutations);
+    mutation *sample_mutation(mutation *mutations, mutation *sentinel);
 }
 
 // Function declarations
-int get_advice(mutation *mutations, std::vector<std::vector<double>> &advice);
+int get_advice(std::vector<std::vector<double>> &advice, mutation *mutations, mutation *sentinel);
 int set_min_prob(const double p_min, std::vector<double> &prob);
 int sample(const std::vector<double> &prob);
-mutation *select_mutation(int index, mutation *mutations);
+mutation *select_mutation(int index, mutation *mutations, mutation *sentinel);
 
 // Comparator used to iterate through probabilities by order of magnitude
 struct IndexComparator
@@ -79,7 +79,7 @@ static std::string log_file_name = "bandits.log";
 /**
  * Implements one round of the contextual bandits algorithm. 
  */
-mutation* sample_mutation(mutation *mutations)
+mutation *sample_mutation(mutation *mutations, mutation *sentinel)
 {
     // Bandit hyperparameters (TODO actually set these)
     double p_min = 0.0001;
@@ -88,13 +88,13 @@ mutation* sample_mutation(mutation *mutations)
     // Create the advice vector
     std::vector<std::vector<double>> advice(NUM_DOMAINS,
                                             std::vector<double>(0));
-    get_advice(mutations, advice);
+    get_advice(advice, mutations, sentinel);
 
     // Compute the unmixed probabilities
     std::vector<double> prob(0);
     double total_prob = 0;
     int j = 0;
-    for (mutation *curr = mutations; curr; curr = curr->next, j++)
+    for (mutation *curr = mutations; curr != sentinel; curr = curr->next, j++)
     {
         double mutation_prob = 0;
         double total_expert_weight = 0;
@@ -120,7 +120,7 @@ mutation* sample_mutation(mutation *mutations)
     // Compute the reward estimator
     std::vector<double> reward_est(0);
     j = 0;
-    for (mutation *curr = mutations; curr; curr = curr->next, j++)
+    for (mutation *curr = mutations; curr != sentinel; curr = curr->next, j++)
     {
         reward_est.emplace_back(curr->fault_bit / prob[j]);
     }
@@ -143,21 +143,20 @@ mutation* sample_mutation(mutation *mutations)
     }
 
     // Output the sampled mutation
-    return select_mutation(sampled_input, mutations);
+    return select_mutation(sampled_input, mutations, sentinel);
 }
 
 /**
  * Populates ADVICE[NUM_DOMAINS][num_mutations] such that ADVICE[i][j] contains
  * the i-th domain value for mutation m_j(x_t). 
  */
-int get_advice(mutation *mutations,
-                 std::vector<std::vector<double>> &advice)
+int get_advice(std::vector<std::vector<double>> &advice, mutation *mutations, mutation *sentinel)
 {
     // Maintain a vector of context normalization values.
     std::vector<double> totals(NUM_DOMAINS);
 
     // Compute the unnormalized context vectors and context totals
-    for (mutation *curr = mutations; curr; curr = curr->next)
+    for (mutation *curr = mutations; curr != sentinel; curr = curr->next)
     {
         for (int i = 0; i < NUM_DOMAINS; i++)
         {
@@ -253,10 +252,10 @@ int sample(const std::vector<double> &prob)
 /**
  * Returns the mutation at INDEX in MUTATIONS.
  */
-mutation* select_mutation(int index, mutation *mutations)
+mutation* select_mutation(int index, mutation *mutations, mutation *sentinel)
 {
     mutation *cur = mutations;
-    for (int i = 0; cur; cur = cur->next, i++)
+    for (int i = 0; cur != sentinel; cur = cur->next, i++)
     {
         if (i == index) {
             return cur;

@@ -346,24 +346,22 @@ enum {
   /* 05 */ FAULT_NOBITS
 };
 
-/* Globals for bandits sampling */
-#define NUM_DOMAINS 4
-
-/* Struct containing data for a mutation in a round of fuzzing */
+/* BANDITS: Struct containing data for a mutation in a round of fuzzing */
 typedef struct mutation {
   char **argv;                 /* argv for the input. */
   int input_len;               /* length of the buffer. */
   u8 *input_buffer;            /* buffer containing the input contents. */
   int fault_bit;               /* whether or not this mutation crashed. */
   u8 fault_type;               /* the type of fault. See enum above. */
-  u32 dsf_scores[NUM_DOMAINS]; /* domain specific scores. */
+  u32 dsf_scores[DSF_MAX];     /* domain specific scores. */
   struct mutation *next;       /* next mutation in the linked list. */
 } mutation;
 
 EXP_ST mutation *mutation_list;     /* List of mutations per iteration. */
 EXP_ST mutation *mutation_sentinel; /* The end of the mutation list. */
 
-mutation *sample_mutation(mutation *mutations); /* Bandits strategy 2 */
+/* BANDITS: the sampling strategy. */
+mutation *sample_mutation(mutation *mutations, mutation *sentinel);
 
 void DEBUG (char const *fmt, ...) {
     static FILE *f = NULL;
@@ -7094,7 +7092,7 @@ havoc_stage:
 
   /* BANDITS: sample a mutation to keep and skip splicing. */
 
-  mutation* sampled_mut = sample_mutation(mutation_list);
+  mutation* sampled_mut = sample_mutation(mutation_list, mutation_sentinel);
   save_to_queue(sampled_mut->argv, sampled_mut->input_buffer, sampled_mut->input_len, sampled_mut->fault_type);
 
   goto abandon_entry;
