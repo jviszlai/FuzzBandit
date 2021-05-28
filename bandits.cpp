@@ -59,9 +59,14 @@ private:
     const std::vector<double> *values;
 };
 
-// Expert weights maintained by this implementation
+// Weights maintained by this implementation. 
+// - EXPERT_WEIGHTS are updated using the Exp4.P update
+// - (TODO) AGGRESSIVE_WEIGHTS are updated using standard multiplicative weight 
+//   update
 std::vector<double> expert_weights(NUM_DOMAINS, 1.0);
-int iteration = 0;
+// std::vector<double> aggressive_weights(NUM_DOMAINS, 1.0);
+int time_step = 0;
+int time_horizon = 1000;
 
 // Logging
 static ofstream log_fd;
@@ -85,10 +90,6 @@ mutation *sample_mutation(mutation *mutations, mutation *sentinel)
     // Open logging
     log_fd.open(log_fn, ios_base::app);
 
-    // Bandit hyperparameters (TODO actually set these)
-    double p_min = 0.0001;
-    double gamma = 0.0005;
-
     // Create the advice vector
     std::vector<std::vector<double>> advice(NUM_DOMAINS,
                                             std::vector<double>(0));
@@ -97,8 +98,8 @@ mutation *sample_mutation(mutation *mutations, mutation *sentinel)
     // Compute the unmixed probabilities
     std::vector<double> prob(0);
     double total_prob = 0;
-    int j = 0;
-    for (mutation *curr = mutations; curr != sentinel; curr = curr->next, j++)
+    int mut_size = 0;
+    for (mutation *curr = mutations; curr != sentinel; curr = curr->next, mut_size++)
     {
         double mutation_prob = 0;
         double total_expert_weight = 0;
@@ -106,7 +107,7 @@ mutation *sample_mutation(mutation *mutations, mutation *sentinel)
         // Compute the mutation probability
         for (int i = 0; i < NUM_DOMAINS; i++)
         {
-            mutation_prob += expert_weights[i] * advice[i][j];
+            mutation_prob += expert_weights[i] * advice[i][mut_size];
             total_expert_weight += expert_weights[i];
         }
 
@@ -114,6 +115,27 @@ mutation *sample_mutation(mutation *mutations, mutation *sentinel)
         mutation_prob = mutation_prob / total_expert_weight;
         prob.emplace_back(mutation_prob);
     }
+
+    // Use the doubling trick to adaptively set the right hyper-parameters. We 
+    // compute the parameters after the probability so that we'll have the size 
+    // of MUTATIONS.
+    // 
+    // NOTE: p_min is set to the minimum between the choice to guarantee best 
+    // theoretical bounds, and 1/NUM_MUT.
+    if (time_step == time_horizon / 2)
+    {
+        time_horizon *= 2;
+    }
+    const double delta = 10.0;
+    const double p_min = min(sqrt(log(NUM_DOMAINS) / (mut_size * time_horizon * 1.0)), 1 / (1.0 * mut_size));
+    const double gamma = sqrt(log(NUM_DOMAINS / delta) / (mut_size * time_horizon * 1.0));
+    log_fd << "[ITERATION " 
+           << time_step 
+           << "]: p_min = " 
+           << p_min 
+           << ", uniform = " 
+           << (1 / (1.0 * mut_size)) 
+           << "\n";
 
     // Set the minimum probability
     set_min_prob(p_min, prob);
@@ -123,7 +145,7 @@ mutation *sample_mutation(mutation *mutations, mutation *sentinel)
 
     // Compute the reward estimator
     std::vector<double> reward_est(0);
-    j = 0;
+    int j = 0;
     for (mutation *curr = mutations; curr != sentinel; curr = curr->next, j++)
     {
         reward_est.emplace_back(curr->fault_bit / prob[j]);
@@ -147,14 +169,14 @@ mutation *sample_mutation(mutation *mutations, mutation *sentinel)
     }
 
     // Close logging
-    log_fd << "[ITERATION " << iteration << "]: weights = {";
+    log_fd << "[ITERATION " << time_step << "]: weights = {";
     std::ostream_iterator<double> wt_iter(log_fd, ", ");
     std::copy(expert_weights.begin(), expert_weights.end(), wt_iter);
     log_fd << "}\n";
     log_fd.close();
 
     // Increment iteration count
-    iteration++;
+    time_step++;
 
     // Output the sampled mutation
     return select_mutation(sampled_input, mutations, sentinel);
