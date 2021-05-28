@@ -155,8 +155,8 @@ mutation *sample_mutation(mutation *mutations, mutation *sentinel)
 
     // Log the weights before...
     log_fd << "[ITERATION " << time_step << "]: weights = {";
-    std::ostream_iterator<double> wt_iter(log_fd, ", ");
-    std::copy(expert_weights.begin(), expert_weights.end(), wt_iter);
+    std::ostream_iterator<double> wt_iter_tmp(log_fd, ", ");
+    std::copy(expert_weights.begin(), expert_weights.end(), wt_iter_tmp);
     log_fd << "}\n";
 
     // Compute the exponential update
