@@ -5246,7 +5246,6 @@ static u32 choose_block_len(u32 limit) {
 
 }
 
-
 /* Calculate case desirability score to adjust the length of havoc fuzzing.
    A helper function for fuzz_one(). Maybe some of these constants should
    go into config.h. */
@@ -6581,10 +6580,10 @@ skip_user_extras:
 
   if (!a_extras_cnt) goto skip_extras;
 
-  stage_name  = "auto extras (over)";
+  stage_name = "auto extras (over)";
   stage_short = "ext_AO";
-  stage_cur   = 0;
-  stage_max   = MIN(a_extras_cnt, USE_AUTO_EXTRAS) * len;
+  stage_cur = 0;
+  stage_max = MIN(a_extras_cnt, USE_AUTO_EXTRAS) * len;
 
   stage_val_type = STAGE_VAL_NONE;
 
@@ -6612,7 +6611,9 @@ skip_user_extras:
       last_len = a_extras[j].len;
       memcpy(out_buf + i, a_extras[j].data, last_len);
 
-      if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+      if (common_fuzz_stuff(argv, out_buf, len)) {
+        goto abandon_entry;
+      }
 
       stage_cur++;
 
@@ -6643,6 +6644,7 @@ skip_extras:
 havoc_stage:
 
   stage_cur_byte = -1;
+  stage_cur_val = 1;
 
   /* BANDITS: havoc stage is just the havoc stage. */
 
@@ -6659,398 +6661,389 @@ havoc_stage:
 
   havoc_queued = queued_paths;
 
-  /* We essentially just do several thousand runs (depending on perf_score)
-     where we take the input file and make random stacked tweaks. */
+  /* BANDITS: do one round of trying each of the havoc operations. */
 
   for (stage_cur = 0; stage_cur < stage_max; stage_cur++) {
 
-    /* BANDITS: nope just one round of stacking. */
+    /* BANDITS: the different havoc stages. */
 
-    u32 use_stacking = 1;
+    switch (stage_cur) {
+      case 0: {
 
-    stage_cur_val = use_stacking;
- 
-    for (i = 0; i < use_stacking; i++) {
+        /* Flip a single bit somewhere. Spooky! */
 
-      switch (stage_cur) {
+        FLIP_BIT(out_buf, UR(temp_len << 3));
+        break;
 
-        case 0:
+      }
+      case 1: {
 
-          /* Flip a single bit somewhere. Spooky! */
+        /* Set byte to interesting value. */
 
-          FLIP_BIT(out_buf, UR(temp_len << 3));
-          break;
+        out_buf[UR(temp_len)] = interesting_8[UR(sizeof(interesting_8))];
+        break;
 
-        case 1: 
+      }
+      case 2: {
 
-          /* Set byte to interesting value. */
+        /* Set word to interesting value, randomly choosing endian. */
 
-          out_buf[UR(temp_len)] = interesting_8[UR(sizeof(interesting_8))];
-          break;
-
-        case 2:
-
-          /* Set word to interesting value, randomly choosing endian. */
-
-          if (temp_len < 2) {
-            break;
-          }
-
-          if (UR(2)) {
-
-            *(u16*)(out_buf + UR(temp_len - 1)) =
-              interesting_16[UR(sizeof(interesting_16) >> 1)];
-
-          } else {
-
-            *(u16*)(out_buf + UR(temp_len - 1)) = SWAP16(
-              interesting_16[UR(sizeof(interesting_16) >> 1)]);
-
-          }
-
-          break;
-
-        case 3:
-
-          /* Set dword to interesting value, randomly choosing endian. */
-
-          if (temp_len < 4) {
-            break;
-          }
-
-          if (UR(2)) {
-  
-            *(u32*)(out_buf + UR(temp_len - 3)) =
-              interesting_32[UR(sizeof(interesting_32) >> 2)];
-
-          } else {
-
-            *(u32*)(out_buf + UR(temp_len - 3)) = SWAP32(
-              interesting_32[UR(sizeof(interesting_32) >> 2)]);
-
-          }
-
-          break;
-
-        case 4:
-
-          /* Randomly subtract from byte. */
-
-          out_buf[UR(temp_len)] -= 1 + UR(ARITH_MAX);
-          break;
-
-        case 5:
-
-          /* Randomly add to byte. */
-
-          out_buf[UR(temp_len)] += 1 + UR(ARITH_MAX);
-          break;
-
-        case 6:
-
-          /* Randomly subtract from word, random endian. */
-
-          if (temp_len < 2) {
-            break;
-          }
-
-          if (UR(2)) {
-
-            u32 pos = UR(temp_len - 1);
-
-            *(u16*)(out_buf + pos) -= 1 + UR(ARITH_MAX);
-
-          } else {
-
-            u32 pos = UR(temp_len - 1);
-            u16 num = 1 + UR(ARITH_MAX);
-
-            *(u16*)(out_buf + pos) =
-              SWAP16(SWAP16(*(u16*)(out_buf + pos)) - num);
-
-          }
-
-          break;
-
-        case 7:
-
-          /* Randomly add to word, random endian. */
-
-          if (temp_len < 2) {
-            break;
-          }
-
-          if (UR(2)) {
-
-            u32 pos = UR(temp_len - 1);
-
-            *(u16*)(out_buf + pos) += 1 + UR(ARITH_MAX);
-
-          } else {
-
-            u32 pos = UR(temp_len - 1);
-            u16 num = 1 + UR(ARITH_MAX);
-
-            *(u16*)(out_buf + pos) =
-              SWAP16(SWAP16(*(u16*)(out_buf + pos)) + num);
-
-          }
-
-          break;
-
-        case 8:
-
-          /* Randomly subtract from dword, random endian. */
-
-          if (temp_len < 4) {
-            break;
-          }
-
-          if (UR(2)) {
-
-            u32 pos = UR(temp_len - 3);
-
-            *(u32*)(out_buf + pos) -= 1 + UR(ARITH_MAX);
-
-          } else {
-
-            u32 pos = UR(temp_len - 3);
-            u32 num = 1 + UR(ARITH_MAX);
-
-            *(u32*)(out_buf + pos) =
-              SWAP32(SWAP32(*(u32*)(out_buf + pos)) - num);
-
-          }
-
-          break;
-
-        case 9:
-
-          /* Randomly add to dword, random endian. */
-
-          if (temp_len < 4) {
-            break;
-          }
-
-          if (UR(2)) {
-
-            u32 pos = UR(temp_len - 3);
-
-            *(u32*)(out_buf + pos) += 1 + UR(ARITH_MAX);
-
-          } else {
-
-            u32 pos = UR(temp_len - 3);
-            u32 num = 1 + UR(ARITH_MAX);
-
-            *(u32*)(out_buf + pos) =
-              SWAP32(SWAP32(*(u32*)(out_buf + pos)) + num);
-
-          }
-
-          break;
-
-        case 10:
-
-          /* Just set a random byte to a random value. Because,
-             why not. We use XOR with 1-255 to eliminate the
-             possibility of a no-op. */
-
-          out_buf[UR(temp_len)] ^= 1 + UR(255);
-          break;
-
-        case 11 ... 12: {
-
-            /* Delete bytes. We're making this a bit more likely
-               than insertion (the next option) in hopes of keeping
-               files reasonably small. */
-
-            u32 del_from, del_len;
-
-            if (temp_len < 2) {
-              break;
-            }
-
-            /* Don't delete too much. */
-
-            del_len = choose_block_len(temp_len - 1);
-
-            del_from = UR(temp_len - del_len + 1);
-
-            memmove(out_buf + del_from, out_buf + del_from + del_len,
-                    temp_len - del_from - del_len);
-
-            temp_len -= del_len;
-
-            break;
-
-          }
-
-        case 13: {
-          
-          u8  actually_clone = UR(4);
-          u32 clone_from, clone_to, clone_len;
-
-          // if (actually_clone) {
-
-          //   clone_len  = choose_block_len(temp_len);
-          //   clone_from = UR(temp_len - clone_len + 1);
-
-          // } else {
-
-          //   clone_len = choose_block_len(HAVOC_BLK_XL);
-          //   clone_from = 0;
-
-          // }
-          clone_len = len + 1;
-          if (temp_len + clone_len >= max_file_len) break;
-
-          clone_to   = UR(temp_len);
-
-          u8* new_buf;
-          new_buf = ck_alloc_nozero(temp_len + clone_len);
-
-          /* Head */
-
-          memcpy(new_buf, out_buf, clone_to);
-
-          /* Inserted part */
-
-          if (actually_clone)
-            memcpy(new_buf + clone_to, out_buf + clone_from, clone_len);
-          else
-            memset(new_buf + clone_to,
-                   UR(2) ? UR(256) : out_buf[UR(temp_len)], clone_len);
-
-          /* Tail */
-          memcpy(new_buf + clone_to + clone_len, out_buf + clone_to,
-                 temp_len - clone_to);
-
-          ck_free(out_buf);
-          out_buf = new_buf;
-          temp_len += clone_len;
-
+        if (temp_len < 2) {
           break;
         }
-        case 14: {
 
-            /* Overwrite bytes with a randomly selected chunk (75%) or fixed
-               bytes (25%). */
+        if (UR(2)) {
 
-            u32 copy_from, copy_to, copy_len;
+          *(u16*)(out_buf + UR(temp_len - 1)) =
+            interesting_16[UR(sizeof(interesting_16) >> 1)];
 
-            if (temp_len < 2) break;
+        } else {
 
-            copy_len  = choose_block_len(temp_len - 1);
+          *(u16*)(out_buf + UR(temp_len - 1)) = SWAP16(
+            interesting_16[UR(sizeof(interesting_16) >> 1)]);
 
-            copy_from = UR(temp_len - copy_len + 1);
-            copy_to   = UR(temp_len - copy_len + 1);
+        }
 
-            if (UR(4)) {
+        break;
 
-              if (copy_from != copy_to)
-                memmove(out_buf + copy_to, out_buf + copy_from, copy_len);
+      }
+      case 3: {
 
-            } else memset(out_buf + copy_to,
-                          UR(2) ? UR(256) : out_buf[UR(temp_len)], copy_len);
+        /* Set dword to interesting value, randomly choosing endian. */
 
-            break;
+        if (temp_len < 4) {
+          break;
+        }
 
+        if (UR(2)) {
+
+          *(u32*)(out_buf + UR(temp_len - 3)) =
+            interesting_32[UR(sizeof(interesting_32) >> 2)];
+
+        } else {
+
+          *(u32*)(out_buf + UR(temp_len - 3)) = SWAP32(
+            interesting_32[UR(sizeof(interesting_32) >> 2)]);
+
+        }
+
+        break;
+
+      }
+      case 4: {
+
+        /* Randomly subtract from byte. */
+
+        out_buf[UR(temp_len)] -= 1 + UR(ARITH_MAX);
+        break;
+
+      }
+      case 5: {
+
+        /* Randomly add to byte. */
+
+        out_buf[UR(temp_len)] += 1 + UR(ARITH_MAX);
+        break;
+
+      }
+      case 6: {
+
+        /* Randomly subtract from word, random endian. */
+
+        if (temp_len < 2) {
+          break;
+        }
+
+        if (UR(2)) {
+
+          u32 pos = UR(temp_len - 1);
+
+          *(u16*)(out_buf + pos) -= 1 + UR(ARITH_MAX);
+
+        } else {
+
+          u32 pos = UR(temp_len - 1);
+          u16 num = 1 + UR(ARITH_MAX);
+
+          *(u16*)(out_buf + pos) =
+            SWAP16(SWAP16(*(u16*)(out_buf + pos)) - num);
+
+        }
+
+        break;
+
+      }
+      case 7:{
+
+        /* Randomly add to word, random endian. */
+
+        if (temp_len < 2) {
+          break;
+        }
+
+        if (UR(2)) {
+
+          u32 pos = UR(temp_len - 1);
+
+          *(u16*)(out_buf + pos) += 1 + UR(ARITH_MAX);
+
+        } else {
+
+          u32 pos = UR(temp_len - 1);
+          u16 num = 1 + UR(ARITH_MAX);
+
+          *(u16*)(out_buf + pos) =
+            SWAP16(SWAP16(*(u16*)(out_buf + pos)) + num);
+
+        }
+
+        break;
+
+      }
+      case 8: {
+
+        /* Randomly subtract from dword, random endian. */
+
+        if (temp_len < 4) {
+          break;
+        }
+
+        if (UR(2)) {
+
+          u32 pos = UR(temp_len - 3);
+
+          *(u32*)(out_buf + pos) -= 1 + UR(ARITH_MAX);
+
+        } else {
+
+          u32 pos = UR(temp_len - 3);
+          u32 num = 1 + UR(ARITH_MAX);
+
+          *(u32*)(out_buf + pos) =
+            SWAP32(SWAP32(*(u32*)(out_buf + pos)) - num);
+
+        }
+
+        break;
+
+      }
+      case 9: {
+
+        /* Randomly add to dword, random endian. */
+
+        if (temp_len < 4) {
+          break;
+        }
+
+        if (UR(2)) {
+
+          u32 pos = UR(temp_len - 3);
+
+          *(u32*)(out_buf + pos) += 1 + UR(ARITH_MAX);
+
+        } else {
+
+          u32 pos = UR(temp_len - 3);
+          u32 num = 1 + UR(ARITH_MAX);
+
+          *(u32*)(out_buf + pos) =
+            SWAP32(SWAP32(*(u32*)(out_buf + pos)) + num);
+
+        }
+
+        break;
+
+      }
+      case 10: {
+        
+        /* Just set a random byte to a random value. Because,
+            why not. We use XOR with 1-255 to eliminate the
+            possibility of a no-op. */
+
+        out_buf[UR(temp_len)] ^= 1 + UR(255);
+        break;
+
+      }
+      case 11 ... 12: {
+
+        /* Delete bytes. We're making this a bit more likely
+            than insertion (the next option) in hopes of keeping
+            files reasonably small. */
+
+        u32 del_from, del_len;
+
+        if (temp_len < 2) {
+          break;
+        }
+
+        /* Don't delete too much. */
+
+        del_len = choose_block_len(temp_len - 1);
+
+        del_from = UR(temp_len - del_len + 1);
+
+        memmove(out_buf + del_from, out_buf + del_from + del_len,
+                temp_len - del_from - del_len);
+
+        temp_len -= del_len;
+
+        break;
+
+      }
+      case 13: {
+
+        /* BANDITS: Do a simple input clone without a chance of blowing 
+           up the input to HAVOC_BLK_XL size. */
+
+        u32 clone_len = choose_block_len(temp_len);
+        u32 clone_from = UR(temp_len - clone_len + 1);
+        u32 clone_to = UR(temp_len);
+
+        if (temp_len + clone_len >= max_file_len) {
+          break;
+        }
+
+        u8* new_buf = ck_alloc_nozero(temp_len + clone_len);
+
+        /* Head */
+
+        memcpy(new_buf, out_buf, clone_to);
+
+        /* Inserted part */
+
+        memcpy(new_buf + clone_to, out_buf + clone_from, clone_len);
+
+        /* Tail */
+
+        memcpy(new_buf + clone_to + clone_len, out_buf + clone_to,
+               temp_len - clone_to);
+
+        /* Free the old input and set the new input variables. */
+
+        ck_free(out_buf);
+        out_buf = new_buf;
+        temp_len += clone_len;
+
+        break;
+
+      }
+      case 14: {
+
+        /* Overwrite bytes with a randomly selected chunk (75%) or fixed
+           bytes (25%). */
+
+        u32 copy_from, copy_to, copy_len;
+
+        if (temp_len < 2) break;
+
+        copy_len = choose_block_len(temp_len - 1);
+        copy_from = UR(temp_len - copy_len + 1);
+        copy_to = UR(temp_len - copy_len + 1);
+
+        if (UR(4)) {
+          if (copy_from != copy_to) {
+            memmove(out_buf + copy_to, out_buf + copy_from, copy_len);
           }
+        } else {
+          memset(out_buf + copy_to,
+                 UR(2) ? UR(256) : out_buf[UR(temp_len)], copy_len);
+        }
+
+        break;
+
+      }
+      case 15: {
 
         /* Values 15 and 16 can be selected only if there are any extras
            present in the dictionaries. */
 
-        case 15: {
+        /* Overwrite bytes with an extra. */
 
-            /* Overwrite bytes with an extra. */
+        if (!extras_cnt || (a_extras_cnt && UR(2))) {
 
-            if (!extras_cnt || (a_extras_cnt && UR(2))) {
+          /* No user-specified extras or odds in our favor. Let's use an
+              auto-detected one. */
 
-              /* No user-specified extras or odds in our favor. Let's use an
-                 auto-detected one. */
+          u32 use_extra = UR(a_extras_cnt);
+          u32 extra_len = a_extras[use_extra].len;
+          u32 insert_at;
 
-              u32 use_extra = UR(a_extras_cnt);
-              u32 extra_len = a_extras[use_extra].len;
-              u32 insert_at;
+          if (extra_len > temp_len) break;
 
-              if (extra_len > temp_len) break;
+          insert_at = UR(temp_len - extra_len + 1);
+          memcpy(out_buf + insert_at, a_extras[use_extra].data, extra_len);
 
-              insert_at = UR(temp_len - extra_len + 1);
-              memcpy(out_buf + insert_at, a_extras[use_extra].data, extra_len);
+        } else {
 
-            } else {
+          /* No auto extras or odds in our favor. Use the dictionary. */
 
-              /* No auto extras or odds in our favor. Use the dictionary. */
+          u32 use_extra = UR(extras_cnt);
+          u32 extra_len = extras[use_extra].len;
+          u32 insert_at;
 
-              u32 use_extra = UR(extras_cnt);
-              u32 extra_len = extras[use_extra].len;
-              u32 insert_at;
-
-              if (extra_len > temp_len) break;
-
-              insert_at = UR(temp_len - extra_len + 1);
-              memcpy(out_buf + insert_at, extras[use_extra].data, extra_len);
-
-            }
-
+          if (extra_len > temp_len) {
             break;
-
           }
 
-        case 16: {
+          insert_at = UR(temp_len - extra_len + 1);
+          memcpy(out_buf + insert_at, extras[use_extra].data, extra_len);
 
-            u32 use_extra, extra_len, insert_at = UR(temp_len + 1);
-            u8* new_buf;
+        }
 
-            /* Insert an extra. Do the same dice-rolling stuff as for the
-               previous case. */
-
-            if (!extras_cnt || (a_extras_cnt && UR(2))) {
-
-              use_extra = UR(a_extras_cnt);
-              extra_len = a_extras[use_extra].len;
-
-              if (temp_len + extra_len >= max_file_len) break;
-
-              new_buf = ck_alloc_nozero(temp_len + extra_len);
-
-              /* Head */
-              memcpy(new_buf, out_buf, insert_at);
-
-              /* Inserted part */
-              memcpy(new_buf + insert_at, a_extras[use_extra].data, extra_len);
-
-            } else {
-
-              use_extra = UR(extras_cnt);
-              extra_len = extras[use_extra].len;
-
-              if (temp_len + extra_len >= max_file_len) break;
-
-              new_buf = ck_alloc_nozero(temp_len + extra_len);
-
-              /* Head */
-              memcpy(new_buf, out_buf, insert_at);
-
-              /* Inserted part */
-              memcpy(new_buf + insert_at, extras[use_extra].data, extra_len);
-
-            }
-
-            /* Tail */
-            memcpy(new_buf + insert_at + extra_len, out_buf + insert_at,
-                   temp_len - insert_at);
-
-            ck_free(out_buf);
-            out_buf   = new_buf;
-            temp_len += extra_len;
-
-            break;
-
-          }
+        break;
 
       }
+      case 16: {
+
+          u32 use_extra, extra_len, insert_at = UR(temp_len + 1);
+          u8* new_buf;
+
+          /* Insert an extra. Do the same dice-rolling stuff as for the
+              previous case. */
+
+          if (!extras_cnt || (a_extras_cnt && UR(2))) {
+
+            use_extra = UR(a_extras_cnt);
+            extra_len = a_extras[use_extra].len;
+
+            if (temp_len + extra_len >= max_file_len) break;
+
+            new_buf = ck_alloc_nozero(temp_len + extra_len);
+
+            /* Head */
+            memcpy(new_buf, out_buf, insert_at);
+
+            /* Inserted part */
+            memcpy(new_buf + insert_at, a_extras[use_extra].data, extra_len);
+
+          } else {
+
+            use_extra = UR(extras_cnt);
+            extra_len = extras[use_extra].len;
+
+            if (temp_len + extra_len >= max_file_len) break;
+
+            new_buf = ck_alloc_nozero(temp_len + extra_len);
+
+            /* Head */
+            memcpy(new_buf, out_buf, insert_at);
+
+            /* Inserted part */
+            memcpy(new_buf + insert_at, extras[use_extra].data, extra_len);
+
+          }
+
+          /* Tail */
+          memcpy(new_buf + insert_at + extra_len, out_buf + insert_at,
+                  temp_len - insert_at);
+
+          ck_free(out_buf);
+          out_buf   = new_buf;
+          temp_len += extra_len;
+
+          break;
+
+        }
 
     }
 
@@ -7092,454 +7085,6 @@ havoc_stage:
     stage_finds[STAGE_SPLICE]  += new_hit_cnt - orig_hit_cnt;
     stage_cycles[STAGE_SPLICE] += stage_max;
   }
-
-  // stage_cur_byte = -1;
-
-  // /* The havoc stage mutation code is also invoked when splicing files; if the
-  //    splice_cycle variable is set, generate different descriptions and such. */
-
-  // if (!splice_cycle) {
-
-  //   stage_name  = "havoc";
-  //   stage_short = "havoc";
-  //   stage_max   = (doing_det ? HAVOC_CYCLES_INIT : HAVOC_CYCLES) *
-  //                 perf_score / havoc_div / 100;
-
-  // } else {
-
-  //   static u8 tmp[32];
-
-  //   perf_score = orig_perf;
-
-  //   sprintf(tmp, "splice %u", splice_cycle);
-  //   stage_name  = tmp;
-  //   stage_short = "splice";
-  //   stage_max   = SPLICE_HAVOC * perf_score / havoc_div / 100;
-
-  // }
-
-  // if (stage_max < HAVOC_MIN) stage_max = HAVOC_MIN;
-
-  // temp_len = len;
-
-  // orig_hit_cnt = queued_paths + unique_crashes;
-
-  // havoc_queued = queued_paths;
-
-  // /* We essentially just do several thousand runs (depending on perf_score)
-  //    where we take the input file and make random stacked tweaks. */
-
-  // for (stage_cur = 0; stage_cur < stage_max; stage_cur++) {
-
-  //   u32 use_stacking = 1 << (1 + UR(HAVOC_STACK_POW2));
-
-  //   stage_cur_val = use_stacking;
- 
-  //   for (i = 0; i < use_stacking; i++) {
-
-  //     switch (UR(15 + ((extras_cnt + a_extras_cnt) ? 2 : 0))) {
-
-  //       case 0:
-
-  //         /* Flip a single bit somewhere. Spooky! */
-
-  //         FLIP_BIT(out_buf, UR(temp_len << 3));
-  //         break;
-
-  //       case 1: 
-
-  //         /* Set byte to interesting value. */
-
-  //         out_buf[UR(temp_len)] = interesting_8[UR(sizeof(interesting_8))];
-  //         break;
-
-  //       case 2:
-
-  //         /* Set word to interesting value, randomly choosing endian. */
-
-  //         if (temp_len < 2) break;
-
-  //         if (UR(2)) {
-
-  //           *(u16*)(out_buf + UR(temp_len - 1)) =
-  //             interesting_16[UR(sizeof(interesting_16) >> 1)];
-
-  //         } else {
-
-  //           *(u16*)(out_buf + UR(temp_len - 1)) = SWAP16(
-  //             interesting_16[UR(sizeof(interesting_16) >> 1)]);
-
-  //         }
-
-  //         break;
-
-  //       case 3:
-
-  //         /* Set dword to interesting value, randomly choosing endian. */
-
-  //         if (temp_len < 4) break;
-
-  //         if (UR(2)) {
-  
-  //           *(u32*)(out_buf + UR(temp_len - 3)) =
-  //             interesting_32[UR(sizeof(interesting_32) >> 2)];
-
-  //         } else {
-
-  //           *(u32*)(out_buf + UR(temp_len - 3)) = SWAP32(
-  //             interesting_32[UR(sizeof(interesting_32) >> 2)]);
-
-  //         }
-
-  //         break;
-
-  //       case 4:
-
-  //         /* Randomly subtract from byte. */
-
-  //         out_buf[UR(temp_len)] -= 1 + UR(ARITH_MAX);
-  //         break;
-
-  //       case 5:
-
-  //         /* Randomly add to byte. */
-
-  //         out_buf[UR(temp_len)] += 1 + UR(ARITH_MAX);
-  //         break;
-
-  //       case 6:
-
-  //         /* Randomly subtract from word, random endian. */
-
-  //         if (temp_len < 2) break;
-
-  //         if (UR(2)) {
-
-  //           u32 pos = UR(temp_len - 1);
-
-  //           *(u16*)(out_buf + pos) -= 1 + UR(ARITH_MAX);
-
-  //         } else {
-
-  //           u32 pos = UR(temp_len - 1);
-  //           u16 num = 1 + UR(ARITH_MAX);
-
-  //           *(u16*)(out_buf + pos) =
-  //             SWAP16(SWAP16(*(u16*)(out_buf + pos)) - num);
-
-  //         }
-
-  //         break;
-
-  //       case 7:
-
-  //         /* Randomly add to word, random endian. */
-
-  //         if (temp_len < 2) break;
-
-  //         if (UR(2)) {
-
-  //           u32 pos = UR(temp_len - 1);
-
-  //           *(u16*)(out_buf + pos) += 1 + UR(ARITH_MAX);
-
-  //         } else {
-
-  //           u32 pos = UR(temp_len - 1);
-  //           u16 num = 1 + UR(ARITH_MAX);
-
-  //           *(u16*)(out_buf + pos) =
-  //             SWAP16(SWAP16(*(u16*)(out_buf + pos)) + num);
-
-  //         }
-
-  //         break;
-
-  //       case 8:
-
-  //         /* Randomly subtract from dword, random endian. */
-
-  //         if (temp_len < 4) break;
-
-  //         if (UR(2)) {
-
-  //           u32 pos = UR(temp_len - 3);
-
-  //           *(u32*)(out_buf + pos) -= 1 + UR(ARITH_MAX);
-
-  //         } else {
-
-  //           u32 pos = UR(temp_len - 3);
-  //           u32 num = 1 + UR(ARITH_MAX);
-
-  //           *(u32*)(out_buf + pos) =
-  //             SWAP32(SWAP32(*(u32*)(out_buf + pos)) - num);
-
-  //         }
-
-  //         break;
-
-  //       case 9:
-
-  //         /* Randomly add to dword, random endian. */
-
-  //         if (temp_len < 4) break;
-
-  //         if (UR(2)) {
-
-  //           u32 pos = UR(temp_len - 3);
-
-  //           *(u32*)(out_buf + pos) += 1 + UR(ARITH_MAX);
-
-  //         } else {
-
-  //           u32 pos = UR(temp_len - 3);
-  //           u32 num = 1 + UR(ARITH_MAX);
-
-  //           *(u32*)(out_buf + pos) =
-  //             SWAP32(SWAP32(*(u32*)(out_buf + pos)) + num);
-
-  //         }
-
-  //         break;
-
-  //       case 10:
-
-  //         /* Just set a random byte to a random value. Because,
-  //            why not. We use XOR with 1-255 to eliminate the
-  //            possibility of a no-op. */
-
-  //         out_buf[UR(temp_len)] ^= 1 + UR(255);
-  //         break;
-
-  //       case 11 ... 12: {
-
-  //           /* Delete bytes. We're making this a bit more likely
-  //              than insertion (the next option) in hopes of keeping
-  //              files reasonably small. */
-
-  //           u32 del_from, del_len;
-
-  //           if (temp_len < 2) break;
-
-  //           /* Don't delete too much. */
-
-  //           del_len = choose_block_len(temp_len - 1);
-
-  //           del_from = UR(temp_len - del_len + 1);
-
-  //           memmove(out_buf + del_from, out_buf + del_from + del_len,
-  //                   temp_len - del_from - del_len);
-
-  //           temp_len -= del_len;
-
-  //           break;
-
-  //         }
-
-  //       case 13: {
-          
-  //         u8  actually_clone = UR(4);
-  //         u32 clone_from, clone_to, clone_len;
-
-  //         if (actually_clone) {
-
-  //           clone_len  = choose_block_len(temp_len);
-  //           clone_from = UR(temp_len - clone_len + 1);
-
-  //         } else {
-
-  //           clone_len = choose_block_len(HAVOC_BLK_XL);
-  //           clone_from = 0;
-
-  //         }
-
-  //         if (temp_len + clone_len >= max_file_len) break;
-
-  //         clone_to   = UR(temp_len);
-
-  //         u8* new_buf;
-  //         new_buf = ck_alloc_nozero(temp_len + clone_len);
-
-  //         /* Head */
-
-  //         memcpy(new_buf, out_buf, clone_to);
-
-  //         /* Inserted part */
-
-  //         if (actually_clone)
-  //           memcpy(new_buf + clone_to, out_buf + clone_from, clone_len);
-  //         else
-  //           memset(new_buf + clone_to,
-  //                  UR(2) ? UR(256) : out_buf[UR(temp_len)], clone_len);
-
-  //         /* Tail */
-  //         memcpy(new_buf + clone_to + clone_len, out_buf + clone_to,
-  //                temp_len - clone_to);
-
-  //         ck_free(out_buf);
-  //         out_buf = new_buf;
-  //         temp_len += clone_len;
-
-  //         break;
-  //       }
-  //       case 14: {
-
-  //           /* Overwrite bytes with a randomly selected chunk (75%) or fixed
-  //              bytes (25%). */
-
-  //           u32 copy_from, copy_to, copy_len;
-
-  //           if (temp_len < 2) break;
-
-  //           copy_len  = choose_block_len(temp_len - 1);
-
-  //           copy_from = UR(temp_len - copy_len + 1);
-  //           copy_to   = UR(temp_len - copy_len + 1);
-
-  //           if (UR(4)) {
-
-  //             if (copy_from != copy_to)
-  //               memmove(out_buf + copy_to, out_buf + copy_from, copy_len);
-
-  //           } else memset(out_buf + copy_to,
-  //                         UR(2) ? UR(256) : out_buf[UR(temp_len)], copy_len);
-
-  //           break;
-
-  //         }
-
-  //       /* Values 15 and 16 can be selected only if there are any extras
-  //          present in the dictionaries. */
-
-  //       case 15: {
-
-  //           /* Overwrite bytes with an extra. */
-
-  //           if (!extras_cnt || (a_extras_cnt && UR(2))) {
-
-  //             /* No user-specified extras or odds in our favor. Let's use an
-  //                auto-detected one. */
-
-  //             u32 use_extra = UR(a_extras_cnt);
-  //             u32 extra_len = a_extras[use_extra].len;
-  //             u32 insert_at;
-
-  //             if (extra_len > temp_len) break;
-
-  //             insert_at = UR(temp_len - extra_len + 1);
-  //             memcpy(out_buf + insert_at, a_extras[use_extra].data, extra_len);
-
-  //           } else {
-
-  //             /* No auto extras or odds in our favor. Use the dictionary. */
-
-  //             u32 use_extra = UR(extras_cnt);
-  //             u32 extra_len = extras[use_extra].len;
-  //             u32 insert_at;
-
-  //             if (extra_len > temp_len) break;
-
-  //             insert_at = UR(temp_len - extra_len + 1);
-  //             memcpy(out_buf + insert_at, extras[use_extra].data, extra_len);
-
-  //           }
-
-  //           break;
-
-  //         }
-
-  //       case 16: {
-
-  //           u32 use_extra, extra_len, insert_at = UR(temp_len + 1);
-  //           u8* new_buf;
-
-  //           /* Insert an extra. Do the same dice-rolling stuff as for the
-  //              previous case. */
-
-  //           if (!extras_cnt || (a_extras_cnt && UR(2))) {
-
-  //             use_extra = UR(a_extras_cnt);
-  //             extra_len = a_extras[use_extra].len;
-
-  //             if (temp_len + extra_len >= max_file_len) break;
-
-  //             new_buf = ck_alloc_nozero(temp_len + extra_len);
-
-  //             /* Head */
-  //             memcpy(new_buf, out_buf, insert_at);
-
-  //             /* Inserted part */
-  //             memcpy(new_buf + insert_at, a_extras[use_extra].data, extra_len);
-
-  //           } else {
-
-  //             use_extra = UR(extras_cnt);
-  //             extra_len = extras[use_extra].len;
-
-  //             if (temp_len + extra_len >= max_file_len) break;
-
-  //             new_buf = ck_alloc_nozero(temp_len + extra_len);
-
-  //             /* Head */
-  //             memcpy(new_buf, out_buf, insert_at);
-
-  //             /* Inserted part */
-  //             memcpy(new_buf + insert_at, extras[use_extra].data, extra_len);
-
-  //           }
-
-  //           /* Tail */
-  //           memcpy(new_buf + insert_at + extra_len, out_buf + insert_at,
-  //                  temp_len - insert_at);
-
-  //           ck_free(out_buf);
-  //           out_buf   = new_buf;
-  //           temp_len += extra_len;
-
-  //           break;
-
-  //         }
-
-  //     }
-
-  //   }
-
-  //   if (common_fuzz_stuff(argv, out_buf, temp_len))
-  //     goto abandon_entry;
-
-  //   /* out_buf might have been mangled a bit, so let's restore it to its
-  //      original size and shape. */
-
-  //   if (temp_len < len) out_buf = ck_realloc(out_buf, len);
-  //   temp_len = len;
-  //   memcpy(out_buf, in_buf, len);
-
-  //   /* If we're finding new stuff, let's run for a bit longer, limits
-  //      permitting. */
-
-  //   if (queued_paths != havoc_queued) {
-
-  //     if (perf_score <= HAVOC_MAX_MULT * 100) {
-  //       stage_max  *= 2;
-  //       perf_score *= 2;
-  //     }
-
-  //     havoc_queued = queued_paths;
-
-  //   }
-
-  // }
-
-  // new_hit_cnt = queued_paths + unique_crashes;
-
-  // if (!splice_cycle) {
-  //   stage_finds[STAGE_HAVOC]  += new_hit_cnt - orig_hit_cnt;
-  //   stage_cycles[STAGE_HAVOC] += stage_max;
-  // } else {
-  //   stage_finds[STAGE_SPLICE]  += new_hit_cnt - orig_hit_cnt;
-  //   stage_cycles[STAGE_SPLICE] += stage_max;
-  // }
 
   /* BANDITS: sample a mutation to keep and skip splicing. */
 
