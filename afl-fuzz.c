@@ -7210,13 +7210,17 @@ abandon_entry:
   ck_free(out_buf);
   ck_free(eff_map);
 
-  /* BANDITS: free the entire mutations list, including the sentinel. */
+  /* BANDITS: free the mutations list. */
   
-  while (mutation_list) {
+  while (mutation_list != mutation_sentinel) {
     mutation *cur_mut = mutation_list;
     mutation_list = mutation_list->next;
     ck_free(cur_mut);
   }
+
+  /* BANDITS: then free the sentinel. */
+  
+  ck_free(mutation_sentinel);
 
   return ret_val;
 
