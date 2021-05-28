@@ -844,7 +844,9 @@ static void add_to_queue(u8* fname, u32 len, u8 passed_det) {
     queue_top->next = q;
     queue_top = q;
 
-  } else q_prev100 = queue = queue_top = q;
+  } else {
+    q_prev100 = queue = queue_top = q;
+  }
 
   queued_paths++;
   pending_not_fuzzed++;
@@ -1033,7 +1035,7 @@ static inline u8 has_dsf_changed() {
         dsf_cumulated[i] = new_cumulated;
         ret = 1;
         dsf_entry_changed[i] = 1;
-        DEBUG("DSF update at key=0x%06x, val=%u (0x%08x); new aggregate: %u (0x%08x); earlier was: %u (0x%08x)\n", i, cur_val, cur_val, new_cumulated, new_cumulated, old_cumulated, old_cumulated);
+        // DEBUG("DSF update at key=0x%06x, val=%u (0x%08x); new aggregate: %u (0x%08x); earlier was: %u (0x%08x)\n", i, cur_val, cur_val, new_cumulated, new_cumulated, old_cumulated, old_cumulated);
       }
     }
   }
@@ -1343,7 +1345,7 @@ static void update_bitmap_score(struct queue_entry* q) {
           /* Insert ourselves as the new winner. */
           top_rated[i] = q;
           score_changed = 1;
-          DEBUG("This input is the new top rated entry for key 0x%06x\n", i);
+          // DEBUG("This input is the new top rated entry for key 0x%06x\n", i);
           dsf_entry_changed[i] = 0;
         }
       }
@@ -3378,7 +3380,6 @@ static u8 save_to_queue(char** argv, void* mem, u32 len, u8 fault) {
 #endif /* ^!SIMPLE_FILES */
 
   DEBUG("[BANDITS DEBUG]: adding %s to queue\n", fn);
-  DEBUG("[BANDITS DEBUG]: using filename %s", fn);
 
   add_to_queue(fn, len, 0);
 
@@ -3410,7 +3411,7 @@ static u8 save_to_queue(char** argv, void* mem, u32 len, u8 fault) {
 
   /* BANDITS: free the filename. */
 
-  ck_free(fn);
+  // ck_free(fn);
 
   /* BANDITS: return that the input was added to the queue. */
 
@@ -5576,7 +5577,7 @@ static u8 fuzz_one(char** argv) {
     fflush(stdout);
   }
 
-  DEBUG("[BANDITS DEBUG]: opening %s", queue_cur->fname);
+  DEBUG("[BANDITS DEBUG]: opening %s\n", queue_cur->fname);
 
   /* Map the test case into memory. */
 
@@ -7095,7 +7096,7 @@ havoc_stage:
 
   /* BANDITS: sample a mutation to keep and skip splicing. */
 
-  DEBUG("[BANDITS DEBUG] entering bandits code...");
+  DEBUG("[BANDITS DEBUG]: entering bandits code...\n");
 
   mutation* sampled_mut = sample_mutation(mutation_list, mutation_sentinel);
   save_to_queue(sampled_mut->argv, sampled_mut->input_buffer, sampled_mut->input_len, sampled_mut->fault_type);
