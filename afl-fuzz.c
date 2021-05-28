@@ -6891,21 +6891,19 @@ havoc_stage:
           u8  actually_clone = UR(4);
           u32 clone_from, clone_to, clone_len;
 
-          if (actually_clone) {
+          // if (actually_clone) {
 
-            clone_len  = choose_block_len(temp_len);
-            clone_from = UR(temp_len - clone_len + 1);
+          //   clone_len  = choose_block_len(temp_len);
+          //   clone_from = UR(temp_len - clone_len + 1);
 
-          } else {
+          // } else {
 
-            clone_len = choose_block_len(HAVOC_BLK_XL);
-            clone_from = 0;
+          //   clone_len = choose_block_len(HAVOC_BLK_XL);
+          //   clone_from = 0;
 
-          }
-
-          if (temp_len + clone_len >= max_file_len) {
-            break;
-          }
+          // }
+          clone_len = len + 1;
+          if (temp_len + clone_len >= max_file_len) break;
 
           clone_to   = UR(temp_len);
 
@@ -6918,12 +6916,11 @@ havoc_stage:
 
           /* Inserted part */
 
-          if (actually_clone) {
+          if (actually_clone)
             memcpy(new_buf + clone_to, out_buf + clone_from, clone_len);
-          } else {
+          else
             memset(new_buf + clone_to,
                    UR(2) ? UR(256) : out_buf[UR(temp_len)], clone_len);
-          }
 
           /* Tail */
           memcpy(new_buf + clone_to + clone_len, out_buf + clone_to,

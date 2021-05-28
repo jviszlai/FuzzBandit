@@ -153,6 +153,9 @@ mutation *sample_mutation(mutation *mutations, mutation *sentinel)
     log_fd << "}\n";
     log_fd.close();
 
+    // Increment iteration count
+    iteration++;
+
     // Output the sampled mutation
     return select_mutation(sampled_input, mutations, sentinel);
 }
