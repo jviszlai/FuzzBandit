@@ -346,6 +346,25 @@ enum {
   /* 05 */ FAULT_NOBITS
 };
 
+/* Globals for bandits sampling */
+#define NUM_DOMAINS 4
+
+/* Struct containing data for a mutation in a round of fuzzing */
+typedef struct mutation {
+  char **argv;                 /* argv for the input. */
+  int input_len;               /* length of the buffer. */
+  u8 *input_buffer;            /* buffer containing the input contents. */
+  int fault_bit;               /* whether or not this mutation crashed. */
+  u8 fault_type;               /* the type of fault. See enum above. */
+  int dsf_scores[NUM_DOMAINS]; /* domain specific scores. */
+  struct mutation *next;       /* next mutation in the linked list. */
+} mutation;                    
+
+EXP_ST mutation *mutation_list;     /* List of mutations per iteration. */
+EXP_ST mutation *mutation_sentinel; /* The end of the mutation list. */
+
+mutation *sample_mutation(mutation *mutations); /* Bandits strategy 2 */
+
 void DEBUG (char const *fmt, ...) {
     static FILE *f = NULL;
     if (f == NULL) {
@@ -3330,6 +3349,256 @@ static void save_as_perf_input(void * mem, u32 len) {
 
 }
 
+/* BANDITS: queue's the input case unconditionally. Returns 1 if entry 
+   is saved, 0 otherwise. */
+
+static u8 save_to_queue(char** argv, void* mem, u32 len, u8 fault) {
+
+  u8 *fn = "";
+  s32 fd;
+  u8 res;
+  u8 hnb = has_new_bits(virgin_bits);
+
+  /* BANDITS: determine if DSF has changed. */
+
+  u8 dsf_changed = 0;
+  if (dsf_enabled) {
+    dsf_changed = has_dsf_changed();
+  }
+
+  /* BANDITS: determine the savefile name. */
+
+#ifndef SIMPLE_FILES
+
+  fn = alloc_printf("%s/queue/id:%06u,%s%s", out_dir, queued_paths,
+                    describe_op(hnb), (dsf_enabled && dsf_changed) ? ",+dsf" : "");
+
+#else
+
+  fn = alloc_printf("%s/queue/id_%06u", out_dir, queued_paths);
+
+#endif /* ^!SIMPLE_FILES */
+
+  DEBUG("adding %s to queue\n", fn);
+
+  add_to_queue(fn, len, 0);
+
+  if (hnb == 2) {
+    queue_top->has_new_cov = 1;
+    queued_with_cov++;
+  }
+
+  queue_top->exec_cksum = hash32(trace_bits, MAP_SIZE, HASH_CONST);
+  if (dsf_enabled) {
+    queue_top->dsf_cksum = hash32(dsf_map, dsf_len_actual * sizeof(u32), HASH_CONST);
+  }
+
+  /* Try to calibrate inline; this also calls update_bitmap_score() when
+     successful. */
+
+  res = calibrate_case(argv, queue_top, mem, queue_cycle - 1, 0);
+
+  if (res == FAULT_ERROR) {
+    FATAL("Unable to execute target application");
+  }
+
+  fd = open(fn, O_WRONLY | O_CREAT | O_EXCL, 0600);
+  if (fd < 0) {
+    PFATAL("Unable to create '%s'", fn);
+  }
+  ck_write(fd, mem, len, fn);
+  close(fd);
+
+  /* BANDITS: free the filename. */
+
+  ck_free(fn);
+
+  /* BANDITS: return that the input was added to the queue. */
+
+  return 1;
+}
+
+/* BANDITS: updates counters, and writes to crash / timeout folder as 
+   appropriate for the given inputs. DOES NOT WRITE TO QUEUE. */
+
+static u8 save_to_other(char** argv, void* mem, u32 len, u8 fault) {
+
+  u8 *fn = "";
+  s32 fd;
+  u8 keeping = 0;
+
+  if (fault == crash_mode) {
+
+    /* Keep only if there are new bits in the map, add to queue for
+       future fuzzing, etc. DSF: also keep if there is a new max*/
+
+    u8 dsf_changed = 0;
+    if (dsf_enabled) {
+      dsf_changed = has_dsf_changed();
+    }
+    if (save_everything) {
+      if (dsf_changed || has_dsf_bit()) {
+        save_as_perf_input(mem, len);
+      }
+    }
+
+    if (!has_new_bits(virgin_bits) && (!dsf_enabled || !dsf_changed)) {
+      if (crash_mode) {
+        total_crashes++;
+      }
+      return 0;
+    }
+
+    /* BANDITS: set keeping to 1 even though we're not keeping anything. */
+
+    keeping = 1;
+  }
+
+  switch (fault) {
+
+  case FAULT_TMOUT:
+
+    /* Timeouts are not very interesting, but we're still obliged to keep
+       a handful of samples. We use the presence of new bits in the
+       hang-specific bitmap as a signal of uniqueness. In "dumb" mode, we
+       just keep everything. */
+
+    total_tmouts++;
+
+    if (unique_hangs >= KEEP_UNIQUE_HANG) {
+      return keeping;
+    }
+
+    if (!dumb_mode) {
+
+#ifdef __x86_64__
+      simplify_trace((u64 *)trace_bits);
+#else
+      simplify_trace((u32 *)trace_bits);
+#endif /* ^__x86_64__ */
+
+      if (!has_new_bits(virgin_tmout)) {
+        return keeping;
+      }
+    }
+
+    unique_tmouts++;
+
+    /* Before saving, we make sure that it's a genuine hang by re-running
+       the target with a more generous timeout (unless the default timeout
+       is already generous). */
+
+    if (exec_tmout < hang_tmout) {
+
+      u8 new_fault;
+      write_to_testcase(mem, len);
+      new_fault = run_target(argv, hang_tmout);
+
+      /* A corner case that one user reported bumping into: increasing the
+         timeout actually uncovers a crash. Make sure we don't discard it if
+         so. */
+
+      if (!stop_soon && new_fault == FAULT_CRASH) {
+        goto keep_as_crash;
+      }
+
+      if (stop_soon || new_fault != FAULT_TMOUT) {
+        return keeping;
+      }
+    }
+
+#ifndef SIMPLE_FILES
+
+    fn = alloc_printf("%s/hangs/id:%06llu,%s", out_dir,
+                      unique_hangs, describe_op(0));
+
+#else
+
+    fn = alloc_printf("%s/hangs/id_%06llu", out_dir,
+                      unique_hangs);
+
+#endif /* ^!SIMPLE_FILES */
+
+    unique_hangs++;
+
+    last_hang_time = get_cur_time();
+
+    break;
+
+  case FAULT_CRASH:
+
+  keep_as_crash:
+
+    /* This is handled in a manner roughly similar to timeouts,
+       except for slightly different limits and no need to re-run test
+       cases. */
+
+    total_crashes++;
+
+    if (unique_crashes >= KEEP_UNIQUE_CRASH) {
+      return keeping;
+    }
+
+    if (!dumb_mode) {
+
+#ifdef __x86_64__
+      simplify_trace((u64 *)trace_bits);
+#else
+      simplify_trace((u32 *)trace_bits);
+#endif /* ^__x86_64__ */
+
+      if (!has_new_bits(virgin_crash)) {
+        return keeping;
+      }
+    }
+
+    if (!unique_crashes) {
+      write_crash_readme();
+    }
+
+#ifndef SIMPLE_FILES
+
+    fn = alloc_printf("%s/crashes/id:%06llu,sig:%02u,%s", out_dir,
+                      unique_crashes, kill_signal, describe_op(0));
+
+#else
+
+    fn = alloc_printf("%s/crashes/id_%06llu_%02u", out_dir, unique_crashes,
+                      kill_signal);
+
+#endif /* ^!SIMPLE_FILES */
+
+    unique_crashes++;
+
+    last_crash_time = get_cur_time();
+    last_crash_execs = total_execs;
+
+    break;
+
+  case FAULT_ERROR:
+    
+    FATAL("Unable to execute target application");
+
+  default:
+    
+    return keeping;
+  
+  }
+
+  /* If we're here, we apparently want to save the crash or hang
+     test case, too. */
+
+  fd = open(fn, O_WRONLY | O_CREAT | O_EXCL, 0600);
+  if (fd < 0) {
+    PFATAL("Unable to create '%s'", fn);
+  }
+  ck_write(fd, mem, len, fn);
+  close(fd);
+
+  ck_free(fn);
+
+  return keeping;
+}
 
 /* Check if the result of an execve() during routine fuzzing is interesting,
    save or queue the input test case for further analysis if so. Returns 1 if
@@ -4876,9 +5145,57 @@ EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len) {
 
   }
 
+  /* BANDITS: Setup mutation data to be collected. If there is already a  
+     mutation list being computed, set the list as the next pointer of the
+     current mutation and proceed. */
+
+  struct mutation *cur_mut = ck_alloc_nozero(sizeof(struct mutation));
+  if (mutation_list) {
+    cur_mut->next = mutation_list;
+    mutation_list = cur_mut;
+  } else {
+    FATAL("Mutations list is empty. This should never happen.");
+  }
+
+  /* BANDITS: Store input arguments and buffer containing the actual input. */
+
+  cur_mut->argv = argv;
+  cur_mut->input_len = len;
+  cur_mut->input_buffer = ck_alloc_nozero(len * sizeof(u8));
+  memcpy(cur_mut->input_buffer, out_buf, len);
+
+  /* BANDITS: Flip a bit if a fault occurred. */
+
+  if (fault != FAULT_NONE) {
+    cur_mut->fault_bit = 1;
+  } else {
+    cur_mut->fault_bit = 0;
+  }
+
+  /* BANDITS: Store the fault type enum value. This is used for input saving. */
+
+  cur_mut->fault_type = fault;
+
+  /* BANDITS: Store the feedback computed from llvm passes. */
+
+  for (int j = 0; j < dsf_count; j++) {
+    dsf_config *dsf = &dsf_configs[j];
+    reducer_t reduce = dsf_reducers[dsf->reducer];
+    u32 dsf_score = 0;
+
+    // Compute the domain specific score
+    for (int i = dsf->start; i < dsf->end; i++) {
+      u32 cur_val = dsf_map[i];
+      dsf_score = reduce(dsf_score, cur_val);
+    }
+
+    // Set the domain specific score to the feedback
+    cur_mut->dsf_scores[j] = dsf_score;
+  }
+
   /* This handles FAULT_ERROR for us: */
 
-  queued_discovered += save_if_interesting(argv, out_buf, len, fault);
+  queued_discovered += save_to_other(argv, out_buf, len, fault);
 
   if (!(stage_cur % stats_update_freq) || stage_cur + 1 == stage_max)
     show_stats();
@@ -5283,6 +5600,11 @@ static u8 fuzz_one(char** argv) {
   subseq_tmouts = 0;
 
   cur_depth = queue_cur->depth;
+
+  /* BANDITS: create the list of mutations by initializing a sentinel node. */
+
+  mutation_sentinel = ck_alloc_nozero(sizeof(struct mutation));
+  mutation_list = mutation_sentinel;
 
   /*******************************************
    * CALIBRATION (only if failed earlier on) *
@@ -6770,6 +7092,13 @@ havoc_stage:
     stage_cycles[STAGE_SPLICE] += stage_max;
   }
 
+  /* BANDITS: sample a mutation to keep and skip splicing. */
+
+  mutation* sampled_mut = sample_mutation(mutation_list);
+  save_to_queue(sampled_mut->argv, sampled_mut->input_buffer, sampled_mut->input_len, sampled_mut->fault_type);
+
+  goto abandon_entry;
+
 #ifndef IGNORE_FINDS
 
   /************
@@ -6883,6 +7212,14 @@ abandon_entry:
   ck_free(out_buf);
   ck_free(eff_map);
 
+  /* BANDITS: free the entire mutations list, including the sentinel. */
+  
+  while (mutation_list) {
+    mutation *cur_mut = mutation_list;
+    mutation_list = mutation_list->next;
+    ck_free(cur_mut);
+  }
+
   return ret_val;
 
 #undef FLIP_BIT
@@ -6990,7 +7327,7 @@ static void sync_fuzzers(char** argv) {
 
         if (mem == MAP_FAILED) PFATAL("Unable to mmap '%s'", path);
 
-        /* See what happens. We rely on save_if_interesting() to catch major
+        /* See what happens. We rely on save_to_other() to catch major
            errors and save the test case. */
 
         write_to_testcase(mem, st.st_size);
@@ -7000,7 +7337,7 @@ static void sync_fuzzers(char** argv) {
         if (stop_soon) return;
 
         syncing_party = sd_ent->d_name;
-        queued_imported += save_if_interesting(argv, mem, st.st_size, fault);
+        queued_imported += save_to_other(argv, mem, st.st_size, fault);
         syncing_party = 0;
 
         munmap(mem, st.st_size);
@@ -8306,6 +8643,8 @@ int main(int argc, char** argv) {
     start_time += 4000;
     if (stop_soon) goto stop_fuzzing;
   }
+  
+  /* MAIN EXECUTION LOOP. */
 
   while (1) {
 
@@ -8348,6 +8687,8 @@ int main(int argc, char** argv) {
         sync_fuzzers(use_argv);
 
     }
+
+    /* Calls fuzz_one. */
 
     skipped_fuzz = fuzz_one(use_argv);
 
