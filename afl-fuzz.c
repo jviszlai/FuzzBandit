@@ -832,18 +832,18 @@ static void add_to_queue(u8* fname, u32 len, u8 passed_det) {
 
   struct queue_entry* q = ck_alloc(sizeof(struct queue_entry));
 
-  q->fname        = fname;
-  q->len          = len;
-  q->depth        = cur_depth + 1;
-  q->passed_det   = passed_det;
+  q->fname = fname;
+  q->len = len;
+  q->depth = cur_depth + 1;
+  q->passed_det = passed_det;
 
-  if (q->depth > max_depth) max_depth = q->depth;
+  if (q->depth > max_depth) {
+    max_depth = q->depth;
+  }
 
   if (queue_top) {
-
     queue_top->next = q;
     queue_top = q;
-
   } else {
     q_prev100 = queue = queue_top = q;
   }
@@ -854,16 +854,26 @@ static void add_to_queue(u8* fname, u32 len, u8 passed_det) {
   cycles_wo_finds = 0;
 
   if (!(queued_paths % 100)) {
-
     q_prev100->next_100 = q;
     q_prev100 = q;
-
   }
 
   last_path_time = get_cur_time();
 
 }
 
+/* BANDITS: deletes an entry from the queue. At the end of every iteration of 
+   the fuzzer, this function deletes the recently run element in the queue. */
+
+static void remove_from_queue(struct queue_entry *q) {
+
+  DEBUG("[BANDITS DEBUG]: destroying %s\n", q->fname);
+
+  // Lmao yolo
+  ck_free(q->fname);
+  ck_free(q->trace_mini);
+  ck_free(q);
+}
 
 /* Destroy the entire queue. */
 
@@ -1503,21 +1513,6 @@ static void cull_queue(void) {
   }
 
 }
-
-/* BANDITS: deletes an entry from the queue. At the end of every iteration of 
-   the fuzzer, this function deletes the recently run element in the queue. */
-
-static void destroy_queue_entry(struct queue_entry* q) {
-
-  DEBUG("[BANDITS DEBUG]: destroying queue entry for %s\n", q->fname);
-  
-  // Lmao yolo
-  ck_free(q->fname);
-  ck_free(q->trace_mini);
-  ck_free(q);
-
-}
-
 
 /* Configure shared memory and virgin_bits. This is called at startup. */
 
@@ -8576,6 +8571,12 @@ int main(int argc, char** argv) {
 
     DEBUG("-----------------------------------------------------------------------------\n");
 
+    if (queue_cur == queue) {
+      DEBUG("[BANDIT DEBUG]: The initial state has queue_cur = queue\n");
+    } else {
+      DEBUG("[BANDIT DEBUG]: The initial state DOES NOT have queue_cur = queue\n");
+    }
+
     u8 skipped_fuzz;
 
     cull_queue();
@@ -8647,7 +8648,7 @@ int main(int argc, char** argv) {
        from the queue. */
 
     struct queue_entry* queue_next = queue_cur->next;
-    destroy_queue_entry(queue_cur);
+    remove_from_queue(queue_cur);
     queue_cur = queue_next;
     current_entry++;
 
