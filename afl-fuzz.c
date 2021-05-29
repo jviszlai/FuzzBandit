@@ -1404,6 +1404,8 @@ static void update_bitmap_score(struct queue_entry* q) {
 
 static void cull_queue(void) {
 
+  DEBUG("[BANDITS DEBUG]: Calling cull_queue\n");
+
   struct queue_entry* q;
   
   u32 i;
@@ -1428,8 +1430,8 @@ static void cull_queue(void) {
     q = q->next;
     num_elements++;
   }
-
-  DEBUG("[BANDITS DEBUG]: Number of queue elements %d", num_elements);
+  
+  DEBUG("[BANDITS DEBUG]: Number of queue elements %d\n", num_elements);
 
   if (dsf_enabled) {
 
@@ -5129,6 +5131,8 @@ abort_trimming:
 
 EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len) {
 
+  DEBUG("[BANDITS DEBUG]: Calling common_fuzz_stuff\n");
+
   u8 fault;
 
   if (post_handler) {
@@ -5531,6 +5535,8 @@ static u8 could_be_interest(u32 old_val, u32 new_val, u8 blen, u8 check_le) {
    skipped or bailed out. */
 
 static u8 fuzz_one(char** argv) {
+
+  DEBUG("[BANDITS DEBUG]: Calling fuzz_one\n");
 
   s32 len, fd, temp_len, i, j;
   u8  *in_buf, *out_buf, *orig_in, *ex_tmp, *eff_map = 0;
@@ -8703,6 +8709,8 @@ int main(int argc, char** argv) {
   /* MAIN EXECUTION LOOP. */
 
   while (1) {
+
+    DEBUG("-----------------------------------------------------------------------------\n");
 
     u8 skipped_fuzz;
 
