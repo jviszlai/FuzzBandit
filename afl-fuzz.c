@@ -1508,6 +1508,8 @@ static void cull_queue(void) {
    the fuzzer, this function deletes the recently run element in the queue. */
 
 static void destroy_queue_entry(struct queue_entry* q) {
+
+  DEBUG("[BANDITS DEBUG]: destroying queue entry for %s\n", q->fname);
   
   // Lmao yolo
   ck_free(q->fname);
