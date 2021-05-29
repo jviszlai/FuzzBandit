@@ -1408,44 +1408,56 @@ static void cull_queue(void) {
   
   u32 i;
 
-  if (dumb_mode || !score_changed) return;
+  if (dumb_mode || !score_changed) {
+    return;
+  }
 
   score_changed = 0;
 
-  queued_favored  = 0;
+  queued_favored = 0;
   pending_favored = 0;
 
   q = queue;
 
+  /* Set all queue elements to unfavored. */
+
+  int num_elements = 0;
+
   while (q) {
     q->favored = 0;
     q = q->next;
+    num_elements++;
   }
+
+  DEBUG("[BANDITS DEBUG]: Number of queue elements %d", num_elements);
 
   if (dsf_enabled) {
 
-    for (i = 0; i < dsf_len_actual; i++) {
+    /* TOP_RATED is a list containing DSF_LEN number of favored queue 
+       elements. */
 
+    for (i = 0; i < dsf_len_actual; i++) {
       if (top_rated[i]) {
 
-        /* if top rated for any i, will be favored */
+        /* If top rated for any i, will be favored */
+        
         u8 was_favored_already = top_rated[i]->favored;
-
         top_rated[i]->favored = 1;
 
-        /* increments counts only if not also favored for another i */
+        /* Increments counts only if not also favored for another i */
+        
         if (!was_favored_already){
           queued_favored++;
-          if (!top_rated[i]->was_fuzzed) pending_favored++;
+          if (!top_rated[i]->was_fuzzed) {
+            pending_favored++;
+          }
         }
-
       }
-
     }
-
   } else {
 
     /* uncovered by favored elements bytes */
+
     static u8 temp_v[MAP_SIZE >> 3];
     memset(temp_v, 255, MAP_SIZE >> 3);
 
@@ -1454,8 +1466,9 @@ static void cull_queue(void) {
       if (top_rated[i]) {
 
         if ((temp_v[i >> 3] & (1 << (i & 7)))) {
+
           /* Let's see if anything in the bitmap isn't captured in temp_v.
-          If yes, and if it has a top_rated[] contender, let's use it. */
+             If yes, and if it has a top_rated[] contender, let's use it. */
 
           u32 j = MAP_SIZE >> 3;
 
@@ -8542,15 +8555,20 @@ int main(int argc, char** argv) {
 
     }
 
-  if (optind == argc || !in_dir || !out_dir) usage(argv[0]);
+  if (optind == argc || !in_dir || !out_dir) {
+    usage(argv[0]);
+  }
 
   setup_signal_handlers();
   check_asan_opts();
 
-  if (sync_id) fix_up_sync();
+  if (sync_id) {
+    fix_up_sync();
+  }
 
-  if (!strcmp(in_dir, out_dir))
+  if (!strcmp(in_dir, out_dir)) {
     FATAL("Input and output directories can't be the same");
+  }
 
   if (dumb_mode) {
 
@@ -8559,27 +8577,42 @@ int main(int argc, char** argv) {
 
   }
 
-  if (getenv("AFL_NO_FORKSRV"))    no_forkserver    = 1;
-  if (getenv("AFL_NO_CPU_RED"))    no_cpu_meter_red = 1;
-  if (getenv("AFL_NO_ARITH"))      no_arith         = 1;
-  if (getenv("AFL_SHUFFLE_QUEUE")) shuffle_queue    = 1;
-  if (getenv("AFL_FAST_CAL"))      fast_cal         = 1;
+  if (getenv("AFL_NO_FORKSRV")) {
+    no_forkserver = 1;
+  }
+  if (getenv("AFL_NO_CPU_RED")) {
+    no_cpu_meter_red = 1;
+  }
+  if (getenv("AFL_NO_ARITH")) {
+    no_arith = 1;
+  }
+  if (getenv("AFL_SHUFFLE_QUEUE")) {
+    shuffle_queue = 1;
+  }
+  if (getenv("AFL_FAST_CAL")) {
+    fast_cal = 1;
+  }
 
   if (getenv("AFL_HANG_TMOUT")) {
     hang_tmout = atoi(getenv("AFL_HANG_TMOUT"));
-    if (!hang_tmout) FATAL("Invalid value of AFL_HANG_TMOUT");
+    if (!hang_tmout) {
+      FATAL("Invalid value of AFL_HANG_TMOUT");
+    }
   }
 
-  if (dumb_mode == 2 && no_forkserver)
+  if (dumb_mode == 2 && no_forkserver) {
     FATAL("AFL_DUMB_FORKSRV and AFL_NO_FORKSRV are mutually exclusive");
+  }
+    
 
   if (getenv("AFL_PRELOAD")) {
     setenv("LD_PRELOAD", getenv("AFL_PRELOAD"), 1);
     setenv("DYLD_INSERT_LIBRARIES", getenv("AFL_PRELOAD"), 1);
   }
 
-  if (getenv("AFL_LD_PRELOAD"))
+  if (getenv("AFL_LD_PRELOAD")) {
     FATAL("Use AFL_PRELOAD instead of AFL_LD_PRELOAD");
+  }
 
   save_cmdline(argc, argv);
 
@@ -8600,36 +8633,47 @@ int main(int argc, char** argv) {
   setup_shm();
   init_count_class16();
 
-
   setup_dirs_fds();
   read_testcases();
   load_auto();
 
   pivot_inputs();
 
-  if (extras_dir) load_extras(extras_dir);
+  if (extras_dir) {
+    load_extras(extras_dir);
+  }
 
-  if (!timeout_given) find_timeout();
+  if (!timeout_given) {
+    find_timeout();
+  }
 
   detect_file_args(argv + optind + 1);
 
-  if (!out_file) setup_stdio_file();
+  if (!out_file) {
+    setup_stdio_file();
+  }
 
   check_binary(argv[optind]);
 
   start_time = get_cur_time();
 
-  if (qemu_mode)
+  if (qemu_mode) {
     use_argv = get_qemu_argv(argv[0], argv + optind, argc - optind);
-  else
+  } else {
     use_argv = argv + optind;
-  
-  if (!forksrv_pid) init_forkserver(use_argv); // We do this early in order to get dsf_len_actual
-  if (dsf_enabled || save_everything) setup_dsf_cumulated();
-  if (dsf_enabled)
-    top_rated= ck_alloc(dsf_len_actual * sizeof(struct queue_entry *));
-  else
+  }
+
+  if (!forksrv_pid) {
+    init_forkserver(use_argv); // We do this early in order to get dsf_len_actual
+  }
+  if (dsf_enabled || save_everything) {
+    setup_dsf_cumulated();
+  }
+  if (dsf_enabled) {
+    top_rated = ck_alloc(dsf_len_actual * sizeof(struct queue_entry *));
+  } else {
     top_rated = ck_alloc(MAP_SIZE * sizeof(struct queue_entry *));
+  }
 
   perform_dry_run(use_argv);
 
@@ -8642,14 +8686,18 @@ int main(int argc, char** argv) {
   write_stats_file(0, 0, 0);
   save_auto();
 
-  if (stop_soon) goto stop_fuzzing;
+  if (stop_soon) {
+    goto stop_fuzzing;
+  }
 
   /* Woop woop woop */
 
   if (!not_on_tty) {
     sleep(4);
     start_time += 4000;
-    if (stop_soon) goto stop_fuzzing;
+    if (stop_soon) {
+      goto stop_fuzzing;
+    }
   }
   
   /* MAIN EXECUTION LOOP. */
@@ -8660,12 +8708,14 @@ int main(int argc, char** argv) {
 
     cull_queue();
 
+    /* BANDITS: .... */
+
     if (!queue_cur) {
 
       queue_cycle++;
-      current_entry     = 0;
+      current_entry = 0;
       cur_skipped_paths = 0;
-      queue_cur         = queue;
+      queue_cur = queue;
 
       while (seek_to) {
         current_entry++;
@@ -8685,38 +8735,54 @@ int main(int argc, char** argv) {
 
       if (queued_paths == prev_queued) {
 
-        if (use_splicing) cycles_wo_finds++; else use_splicing = 1;
+        if (use_splicing) {
+          cycles_wo_finds++; 
+        } else {
+          use_splicing = 1;
+        }
 
-      } else cycles_wo_finds = 0;
+      } else {
+        cycles_wo_finds = 0;
+      }
 
       prev_queued = queued_paths;
 
-      if (sync_id && queue_cycle == 1 && getenv("AFL_IMPORT_FIRST"))
+      if (sync_id && queue_cycle == 1 && getenv("AFL_IMPORT_FIRST")) {
         sync_fuzzers(use_argv);
-
+      }
     }
 
     /* Calls fuzz_one. */
 
     skipped_fuzz = fuzz_one(use_argv);
 
-    if (!stop_soon && sync_id && !skipped_fuzz) {
-      
-      if (!(sync_interval_cnt++ % SYNC_INTERVAL))
-        sync_fuzzers(use_argv);
+    /* Sync the fuzzers. Not sure what this does. */
 
+    if (!stop_soon && sync_id && !skipped_fuzz) {
+      if (!(sync_interval_cnt++ % SYNC_INTERVAL)) {
+        sync_fuzzers(use_argv);
+      }
     }
 
-    if (!stop_soon && exit_1) stop_soon = 2;
+    /* Break the main loop if stop_soon triggered. */
 
-    if (stop_soon) break;
+    if (!stop_soon && exit_1) {
+      stop_soon = 2;
+    }
+    if (stop_soon) {
+      break;
+    }
+
+    /* Advance the queue entry. */
 
     queue_cur = queue_cur->next;
     current_entry++;
 
   }
 
-  if (queue_cur) show_stats();
+  if (queue_cur) {
+    show_stats();
+  }
 
   write_bitmap();
   write_stats_file(0, 0, 0);
@@ -8730,11 +8796,10 @@ stop_fuzzing:
   /* Running for more than 30 minutes but still doing first cycle? */
 
   if (queue_cycle == 1 && get_cur_time() - start_time > 30 * 60 * 1000) {
-
     SAYF("\n" cYEL "[!] " cRST
-           "Stopped during the first cycle, results may be incomplete.\n"
-           "    (For info on resuming, see %s/README.)\n", doc_path);
-
+         "Stopped during the first cycle, results may be incomplete.\n"
+         "    (For info on resuming, see %s/README.)\n",
+         doc_path);
   }
 
   fclose(plot_file);
