@@ -1423,15 +1423,14 @@ static void cull_queue(void) {
 
   /* Set all queue elements to unfavored. */
 
-  int num_elements = 0;
+  int q_index = 0;
 
   while (q) {
+    DEBUG("[BANDITS DEBUG]: Queue elem %d: %s", q_index, q->fname);
     q->favored = 0;
     q = q->next;
-    num_elements++;
+    q_index++;
   }
-  
-  DEBUG("[BANDITS DEBUG]: Number of queue elements %d\n", num_elements);
 
   if (dsf_enabled) {
 
@@ -5536,14 +5535,26 @@ static u8 fuzz_one(char** argv) {
 
   DEBUG("[BANDITS DEBUG]: Calling fuzz_one\n");
 
-  s32 len, fd, temp_len, i, j;
-  u8  *in_buf, *out_buf, *orig_in, *ex_tmp, *eff_map = 0;
-  u64 havoc_queued,  orig_hit_cnt, new_hit_cnt;
-  u32 splice_cycle = 0, perf_score = 100, prev_cksum, eff_cnt = 1;
+  s32 len,
+      fd,
+      temp_len,
+      i,
+      j;
+  u8 *in_buf,
+      *out_buf,
+      *orig_in,
+      *ex_tmp,
+      *eff_map = 0;
+  u64 havoc_queued,
+      orig_hit_cnt,
+      new_hit_cnt;
+  u32 splice_cycle = 0,
+      perf_score = 100,
+      prev_cksum, eff_cnt = 1;
 
-  u8  ret_val = 1;
+  u8 ret_val = 1;
 
-  u8  a_collect[MAX_AUTO_EXTRA];
+  u8 a_collect[MAX_AUTO_EXTRA];
   u32 a_len = 0;
 
   u32 orig_dsf_cumulated[DSF_LEN];
@@ -5554,7 +5565,9 @@ static u8 fuzz_one(char** argv) {
   /* In IGNORE_FINDS mode, skip any entries that weren't in the
      initial data set. */
 
-  if (queue_cur->depth > 1) return 1;
+  if (queue_cur->depth > 1) {
+    return 1;
+  }
 
 #else
 
@@ -5567,8 +5580,10 @@ static u8 fuzz_one(char** argv) {
     /* in DSF mode, queue inputs remain favored even if 
        they were previously fuzzed */
 
-    if (((queue_cur->was_fuzzed  && !dsf_enabled) || !queue_cur->favored) &&
-        UR(100) < SKIP_TO_NEW_PROB) return 1;
+    if (((queue_cur->was_fuzzed && !dsf_enabled) || !queue_cur->favored) &&
+        UR(100) < SKIP_TO_NEW_PROB) {
+      return 1;
+    }
 
   } else if (!dumb_mode && !queue_cur->favored && queued_paths > 10) {
 
@@ -5577,22 +5592,24 @@ static u8 fuzz_one(char** argv) {
        lower for never-fuzzed entries. */
 
     if (queue_cycle > 1 && !queue_cur->was_fuzzed) {
-
-      if (UR(100) < SKIP_NFAV_NEW_PROB) return 1;
-
+      if (UR(100) < SKIP_NFAV_NEW_PROB) {
+        return 1;
+      }
     } else {
-
-      if (UR(100) < SKIP_NFAV_OLD_PROB) return 1;
-
+      if (UR(100) < SKIP_NFAV_OLD_PROB) {
+        return 1;
+      }
     }
 
   }
 
 #endif /* ^IGNORE_FINDS */
 
-  DEBUG("===============Fuzzing test case #%u===============\n",current_entry);
+  DEBUG("===============Fuzzing test case #%u===============\n", current_entry);
 
-  if (!queue_cur->favored) DEBUG("(Test case is not favored)\n");
+  if (!queue_cur->favored) {
+    DEBUG("(Test case is not favored)\n");
+  }
   if (not_on_tty) {
     ACTF("Fuzzing test case #%u (%u total, %llu uniq crashes found)...",
          current_entry, queued_paths, unique_crashes);
@@ -5605,13 +5622,18 @@ static u8 fuzz_one(char** argv) {
 
   fd = open(queue_cur->fname, O_RDONLY);
 
-  if (fd < 0) PFATAL("Unable to open '%s'", queue_cur->fname);
+  if (fd < 0) {
+    PFATAL("Unable to open '%s'", queue_cur->fname);
+  }
 
   len = queue_cur->len;
 
   orig_in = in_buf = mmap(0, len, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
 
-  if (orig_in == MAP_FAILED) PFATAL("Unable to mmap '%s'", queue_cur->fname);
+  if (orig_in == MAP_FAILED) {
+    PFATAL("Unable to mmap '%s'", queue_cur->fname);
+  }
+    
 
   close(fd);
 
