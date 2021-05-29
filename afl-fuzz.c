@@ -3681,6 +3681,45 @@ static void find_timeout(void) {
 
 }
 
+/* When resuming, try to find the queue position to start from. This makes sense
+   only when resuming, and when we can find the original fuzzer_stats. */
+
+static u32 find_start_position(void)
+{
+
+  static u8 tmp[4096]; /* Ought to be enough for anybody. */
+
+  u8 *fn, *off;
+  s32 fd, i;
+  u32 ret;
+
+  if (!resuming_fuzz)
+    return 0;
+
+  if (in_place_resume)
+    fn = alloc_printf("%s/fuzzer_stats", out_dir);
+  else
+    fn = alloc_printf("%s/../fuzzer_stats", in_dir);
+
+  fd = open(fn, O_RDONLY);
+  ck_free(fn);
+
+  if (fd < 0)
+    return 0;
+
+  i = read(fd, tmp, sizeof(tmp) - 1);
+  (void)i; /* Ignore errors */
+  close(fd);
+
+  off = strstr(tmp, "cur_path          : ");
+  if (!off)
+    return 0;
+
+  ret = atoi(off + 20);
+  if (ret >= queued_paths)
+    ret = 0;
+  return ret;
+}
 
 /* Update stats file for unattended monitoring. */
 
