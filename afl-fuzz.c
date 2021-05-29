@@ -5131,8 +5131,6 @@ abort_trimming:
 
 EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len) {
 
-  DEBUG("[BANDITS DEBUG]: Calling common_fuzz_stuff\n");
-
   u8 fault;
 
   if (post_handler) {
