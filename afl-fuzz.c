@@ -1504,6 +1504,18 @@ static void cull_queue(void) {
 
 }
 
+/* BANDITS: deletes an entry from the queue. At the end of every iteration of 
+   the fuzzer, this function deletes the recently run element in the queue. */
+
+static void destroy_queue_entry(struct queue_entry* q) {
+  
+  // Lmao yolo
+  ck_free(q->fname);
+  ck_free(q->trace_mini);
+  ck_free(q);
+
+}
+
 
 /* Configure shared memory and virgin_bits. This is called at startup. */
 
@@ -8629,9 +8641,12 @@ int main(int argc, char** argv) {
       break;
     }
 
-    /* Advance the queue entry. */
+    /* Advance the queue entry. This is where we're going to drop the entry 
+       from the queue. */
 
-    queue_cur = queue_cur->next;
+    struct queue_entry* queue_next = queue_cur->next;
+    destroy_queue_entry(queue_cur);
+    queue_cur = queue_next;
     current_entry++;
 
   }
