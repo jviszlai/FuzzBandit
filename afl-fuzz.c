@@ -1345,7 +1345,6 @@ static void update_bitmap_score(struct queue_entry* q) {
           /* Insert ourselves as the new winner. */
           top_rated[i] = q;
           score_changed = 1;
-          // DEBUG("This input is the new top rated entry for key 0x%06x\n", i);
           dsf_entry_changed[i] = 0;
         }
       }
@@ -1362,7 +1361,9 @@ static void update_bitmap_score(struct queue_entry* q) {
 
            /* Faster-executing or smaller test cases are favored. */
 
-           if (fav_factor > top_rated[i]->exec_us * top_rated[i]->len) continue;
+           if (fav_factor > top_rated[i]->exec_us * top_rated[i]->len) {
+             continue;
+           }
 
            /* Looks like we're going to win. Decrease ref count for the
               previous winner, discard its trace_bits[] if necessary. */
@@ -1375,6 +1376,7 @@ static void update_bitmap_score(struct queue_entry* q) {
          }
 
         /* Insert ourselves as the new winner. */
+
         top_rated[i] = q;
 
         /* change scores accordingly */
@@ -1384,7 +1386,7 @@ static void update_bitmap_score(struct queue_entry* q) {
         if (!q->trace_mini) {
           q->trace_mini = ck_alloc(MAP_SIZE >> 3);
           minimize_bits(q->trace_mini, trace_bits);
-         }
+        }
         score_changed = 1;
 
        }
@@ -1400,6 +1402,7 @@ static void update_bitmap_score(struct queue_entry* q) {
    previously-unseen bytes (temp_v) and marks them as favored, at least
    until the next run. The favored entries are given more air time during
    all fuzzing steps. 
+
    In the dsf_enabled setting we only favor entries which achieve the max.*/
 
 static void cull_queue(void) {
@@ -1426,7 +1429,7 @@ static void cull_queue(void) {
   int q_index = 0;
 
   while (q) {
-    DEBUG("[BANDITS DEBUG]: Queue elem %d: %s", q_index, q->fname);
+    DEBUG("[BANDITS DEBUG]: Queue elem %d: %s\n", q_index, q->fname);
     q->favored = 0;
     q = q->next;
     q_index++;
@@ -1463,9 +1466,7 @@ static void cull_queue(void) {
     memset(temp_v, 255, MAP_SIZE >> 3);
 
     for (i = 0; i < MAP_SIZE; i++) {
-
       if (top_rated[i]) {
-
         if ((temp_v[i >> 3] & (1 << (i & 7)))) {
 
           /* Let's see if anything in the bitmap isn't captured in temp_v.
@@ -1475,20 +1476,21 @@ static void cull_queue(void) {
 
           /* Remove all bits belonging to the current entry from temp_v. */
 
-          while (j--) 
-            if (top_rated[i]->trace_mini[j])
+          while (j--) {
+            if (top_rated[i]->trace_mini[j]) {
               temp_v[j] &= ~top_rated[i]->trace_mini[j];
+            }
+          }
 
           top_rated[i]->favored = 1;
-          
           queued_favored++;
 
-          if (!top_rated[i]->was_fuzzed) pending_favored++;
+          if (!top_rated[i]->was_fuzzed) {
+            pending_favored++;
+          }
 
         }
-
       }
-
     }
 
   }
@@ -2762,22 +2764,26 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
 
   static u8 first_trace[MAP_SIZE];
 
-  u8  fault = 0, new_bits = 0, var_detected = 0,
-      first_run = (q->exec_cksum == 0);
+  u8 fault = 0,
+     new_bits = 0,
+     var_detected = 0,
+     first_run = (q->exec_cksum == 0);
 
   u64 start_us, stop_us;
 
-  s32 old_sc = stage_cur, old_sm = stage_max;
+  s32 old_sc = stage_cur,
+      old_sm = stage_max;
   u32 use_tmout = exec_tmout;
-  u8* old_sn = stage_name;
+  u8 *old_sn = stage_name;
 
   /* Be a bit more generous about timeouts when resuming sessions, or when
      trying to calibrate already-added finds. This helps avoid trouble due
      to intermittent latency. */
 
-  if (!from_queue || resuming_fuzz)
+  if (!from_queue || resuming_fuzz) {
     use_tmout = MAX(exec_tmout + CAL_TMOUT_ADD,
                     exec_tmout * CAL_TMOUT_PERC / 100);
+  }
 
   q->cal_failed++;
 
@@ -2787,10 +2793,13 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
   /* Make sure the forkserver is up before we do anything, and let's not
      count its spin-up time toward binary calibration. */
 
-  if (dumb_mode != 1 && !no_forkserver && !forksrv_pid)
+  if (dumb_mode != 1 && !no_forkserver && !forksrv_pid) {
     init_forkserver(argv);
+  }
 
-  if (q->exec_cksum) memcpy(first_trace, trace_bits, MAP_SIZE);
+  if (q->exec_cksum) {
+    memcpy(first_trace, trace_bits, MAP_SIZE);
+  }
 
   start_us = get_cur_time_us();
 
@@ -2798,7 +2807,9 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
 
     u32 cksum;
 
-    if (!first_run && !(stage_cur % stats_update_freq)) show_stats();
+    if (!first_run && !(stage_cur % stats_update_freq)) {
+      show_stats();
+    }
 
     write_to_testcase(use_mem, q->len);
 
@@ -2807,7 +2818,9 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
     /* stop_soon is set by the handler for Ctrl+C. When it's pressed,
        we want to bail out quickly. */
 
-    if (stop_soon || fault != crash_mode) goto abort_calibration;
+    if (stop_soon || fault != crash_mode) {
+      goto abort_calibration;
+    }
 
     if (!dumb_mode && !stage_cur && !count_bytes(trace_bits)) {
       fault = FAULT_NOINST;
@@ -2819,7 +2832,10 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
     if (q->exec_cksum != cksum) {
 
       u8 hnb = has_new_bits(virgin_bits);
-      if (hnb > new_bits) new_bits = hnb;
+      
+      if (hnb > new_bits) {
+        new_bits = hnb;
+      }
 
       if (q->exec_cksum) {
 
@@ -2875,7 +2891,9 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
      parent. This is a non-critical problem, but something to warn the user
      about. */
 
-  if (!dumb_mode && first_run && !fault && !new_bits) fault = FAULT_NOBITS;
+  if (!dumb_mode && first_run && !fault && !new_bits) {
+    fault = FAULT_NOBITS;
+  }
 
 abort_calibration:
 
@@ -2901,7 +2919,9 @@ abort_calibration:
   stage_cur  = old_sc;
   stage_max  = old_sm;
 
-  if (!first_run) show_stats();
+  if (!first_run) {
+    show_stats();
+  }
 
   return fault;
 
@@ -2914,10 +2934,15 @@ static void check_map_coverage(void) {
 
   u32 i;
 
-  if (count_bytes(trace_bits) < 100) return;
+  if (count_bytes(trace_bits) < 100) {
+    return;
+  }
 
-  for (i = (1 << (MAP_SIZE_POW2 - 1)); i < MAP_SIZE; i++)
-    if (trace_bits[i]) return;
+  for (i = (1 << (MAP_SIZE_POW2 - 1)); i < MAP_SIZE; i++) {
+    if (trace_bits[i]) {
+      return;
+    }
+  }
 
   WARNF("Recompile binary with newer version of afl to improve coverage!");
 
@@ -3619,240 +3644,6 @@ static u8 save_to_other(char** argv, void* mem, u32 len, u8 fault) {
 
   return keeping;
 }
-
-/* Check if the result of an execve() during routine fuzzing is interesting,
-   save or queue the input test case for further analysis if so. Returns 1 if
-   entry is saved, 0 otherwise. */
-
-static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
-
-  u8  *fn = "";
-  u8  hnb;
-  s32 fd;
-  u8  keeping = 0, res;
-
-  if (fault == crash_mode) {
-
-    /* Keep only if there are new bits in the map, add to queue for
-       future fuzzing, etc. DSF: also keep if there is a new max*/
-
-    u8 dsf_changed = 0;
-    if (dsf_enabled) dsf_changed = has_dsf_changed();
-    if (save_everything) {
-        if (dsf_changed || has_dsf_bit()) save_as_perf_input(mem, len);
-    }
-
-    if (!(hnb = has_new_bits(virgin_bits)) && (!dsf_enabled || !dsf_changed)) {
-      if (crash_mode) total_crashes++;
-      return 0;
-    }    
-   
-
-#ifndef SIMPLE_FILES
-
-    fn = alloc_printf("%s/queue/id:%06u,%s%s", out_dir, queued_paths,
-                      describe_op(hnb), (dsf_enabled && dsf_changed) ? ",+dsf" : "" );
-
-#else
-
-    fn = alloc_printf("%s/queue/id_%06u", out_dir, queued_paths);
-
-#endif /* ^!SIMPLE_FILES */
-
-    DEBUG("adding %s to queue\n", fn);
-
-    add_to_queue(fn, len, 0);
-
-    if (hnb == 2) {
-      queue_top->has_new_cov = 1;
-      queued_with_cov++;
-    }
-
-    queue_top->exec_cksum = hash32(trace_bits, MAP_SIZE, HASH_CONST);
-    if (dsf_enabled) 
-      queue_top->dsf_cksum = hash32(dsf_map, dsf_len_actual*sizeof(u32), HASH_CONST); 
-
-    /* Try to calibrate inline; this also calls update_bitmap_score() when
-       successful. */
-
-    res = calibrate_case(argv, queue_top, mem, queue_cycle - 1, 0);
-
-    if (res == FAULT_ERROR)
-      FATAL("Unable to execute target application");
-
-    fd = open(fn, O_WRONLY | O_CREAT | O_EXCL, 0600);
-    if (fd < 0) PFATAL("Unable to create '%s'", fn);
-    ck_write(fd, mem, len, fn);
-    close(fd);
-
-    keeping = 1;
-
-  }
-
-  switch (fault) {
-
-    case FAULT_TMOUT:
-
-      /* Timeouts are not very interesting, but we're still obliged to keep
-         a handful of samples. We use the presence of new bits in the
-         hang-specific bitmap as a signal of uniqueness. In "dumb" mode, we
-         just keep everything. */
-
-      total_tmouts++;
-
-      if (unique_hangs >= KEEP_UNIQUE_HANG) return keeping;
-
-      if (!dumb_mode) {
-
-#ifdef __x86_64__
-        simplify_trace((u64*)trace_bits);
-#else
-        simplify_trace((u32*)trace_bits);
-#endif /* ^__x86_64__ */
-
-        if (!has_new_bits(virgin_tmout)) return keeping;
-
-      }
-
-      unique_tmouts++;
-
-      /* Before saving, we make sure that it's a genuine hang by re-running
-         the target with a more generous timeout (unless the default timeout
-         is already generous). */
-
-      if (exec_tmout < hang_tmout) {
-
-        u8 new_fault;
-        write_to_testcase(mem, len);
-        new_fault = run_target(argv, hang_tmout);
-
-        /* A corner case that one user reported bumping into: increasing the
-           timeout actually uncovers a crash. Make sure we don't discard it if
-           so. */
-
-        if (!stop_soon && new_fault == FAULT_CRASH) goto keep_as_crash;
-
-        if (stop_soon || new_fault != FAULT_TMOUT) return keeping;
-
-      }
-
-#ifndef SIMPLE_FILES
-
-      fn = alloc_printf("%s/hangs/id:%06llu,%s", out_dir,
-                        unique_hangs, describe_op(0));
-
-#else
-
-      fn = alloc_printf("%s/hangs/id_%06llu", out_dir,
-                        unique_hangs);
-
-#endif /* ^!SIMPLE_FILES */
-
-      unique_hangs++;
-
-      last_hang_time = get_cur_time();
-
-      break;
-
-    case FAULT_CRASH:
-
-keep_as_crash:
-
-      /* This is handled in a manner roughly similar to timeouts,
-         except for slightly different limits and no need to re-run test
-         cases. */
-
-      total_crashes++;
-
-      if (unique_crashes >= KEEP_UNIQUE_CRASH) return keeping;
-
-      if (!dumb_mode) {
-
-#ifdef __x86_64__
-        simplify_trace((u64*)trace_bits);
-#else
-        simplify_trace((u32*)trace_bits);
-#endif /* ^__x86_64__ */
-
-        if (!has_new_bits(virgin_crash)) return keeping;
-
-      }
-
-      if (!unique_crashes) write_crash_readme();
-
-#ifndef SIMPLE_FILES
-
-      fn = alloc_printf("%s/crashes/id:%06llu,sig:%02u,%s", out_dir,
-                        unique_crashes, kill_signal, describe_op(0));
-
-#else
-
-      fn = alloc_printf("%s/crashes/id_%06llu_%02u", out_dir, unique_crashes,
-                        kill_signal);
-
-#endif /* ^!SIMPLE_FILES */
-
-      unique_crashes++;
-
-      last_crash_time = get_cur_time();
-      last_crash_execs = total_execs;
-
-      break;
-
-    case FAULT_ERROR: FATAL("Unable to execute target application");
-
-    default: return keeping;
-
-  }
-
-  /* If we're here, we apparently want to save the crash or hang
-     test case, too. */
-
-  fd = open(fn, O_WRONLY | O_CREAT | O_EXCL, 0600);
-  if (fd < 0) PFATAL("Unable to create '%s'", fn);
-  ck_write(fd, mem, len, fn);
-  close(fd);
-
-  ck_free(fn);
-
-  return keeping;
-
-}
-
-
-/* When resuming, try to find the queue position to start from. This makes sense
-   only when resuming, and when we can find the original fuzzer_stats. */
-
-static u32 find_start_position(void) {
-
-  static u8 tmp[4096]; /* Ought to be enough for anybody. */
-
-  u8  *fn, *off;
-  s32 fd, i;
-  u32 ret;
-
-  if (!resuming_fuzz) return 0;
-
-  if (in_place_resume) fn = alloc_printf("%s/fuzzer_stats", out_dir);
-  else fn = alloc_printf("%s/../fuzzer_stats", in_dir);
-
-  fd = open(fn, O_RDONLY);
-  ck_free(fn);
-
-  if (fd < 0) return 0;
-
-  i = read(fd, tmp, sizeof(tmp) - 1); (void)i; /* Ignore errors */
-  close(fd);
-
-  off = strstr(tmp, "cur_path          : ");
-  if (!off) return 0;
-
-  ret = atoi(off + 20);
-  if (ret >= queued_paths) ret = 0;
-  return ret;
-
-}
-
 
 /* The same, but for timeouts. The idea is that when resuming sessions without
    -t given, we don't want to keep auto-scaling the timeout over and over
