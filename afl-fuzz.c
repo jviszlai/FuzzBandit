@@ -1410,9 +1410,9 @@ static void cull_queue(void) {
   
   u32 i;
 
-  if (dumb_mode || !score_changed) {
-    return;
-  }
+  // if (dumb_mode || !score_changed) {
+  //   return;
+  // }
 
   score_changed = 0;
 
@@ -8713,8 +8713,6 @@ int main(int argc, char** argv) {
     u8 skipped_fuzz;
 
     cull_queue();
-
-    /* BANDITS: .... */
 
     if (!queue_cur) {
 
