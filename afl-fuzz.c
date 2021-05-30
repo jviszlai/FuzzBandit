@@ -560,38 +560,6 @@ static void bind_to_free_cpu(void) {
 
 #endif /* HAVE_AFFINITY */
 
-#ifndef IGNORE_FINDS
-
-/* Helper function to compare buffers; returns first and last differing offset. We
-   use this to find reasonable locations for splicing two files. */
-
-static void locate_diffs(u8* ptr1, u8* ptr2, u32 len, s32* first, s32* last) {
-
-  s32 f_loc = -1;
-  s32 l_loc = -1;
-  u32 pos;
-
-  for (pos = 0; pos < len; pos++) {
-
-    if (*(ptr1++) != *(ptr2++)) {
-
-      if (f_loc == -1) f_loc = pos;
-      l_loc = pos;
-
-    }
-
-  }
-
-  *first = f_loc;
-  *last = l_loc;
-
-  return;
-
-}
-
-#endif /* !IGNORE_FINDS */
-
-
 /* Describe integer. Uses 12 cyclic static buffers for return values. The value
    returned should be five characters or less for all the integers we reasonably
    expect to see. */
@@ -865,7 +833,7 @@ static void remove_from_queue(struct queue_entry *q) {
   DEBUG("[BANDITS DEBUG]: destroying %s\n", q->fname);
 
   if (queue_top == q) {
-    FATAL("Deleting the back entry of the queue... that shouldn't happen\n");
+    PFATAL("Deleting the back entry of the queue... that shouldn't happen\n");
   }
 
   if (queue == q) {
@@ -873,12 +841,16 @@ static void remove_from_queue(struct queue_entry *q) {
     queue = q->next;
   }
 
+  // Update globals
+  total_bitmap_size -= q->bitmap_size;
+  total_bitmap_entries--;
   queued_paths--;
 
   // Lmao yolo
   ck_free(q->fname);
   ck_free(q->trace_mini);
   ck_free(q);
+
 }
 
 /* Destroy the entire queue. */
@@ -8121,7 +8093,6 @@ static void save_cmdline(u32 argc, char** argv) {
 int main(int argc, char** argv) {
 
   s32 opt;
-  u64 prev_queued = 0;
   u32 sync_interval_cnt = 0, seek_to;
   u8  *extras_dir = 0;
   u8  mem_limit_given = 0;
@@ -8488,22 +8459,11 @@ int main(int argc, char** argv) {
     cull_queue();
 
     if (!queue_cur) {
-      
-
-    }
-
-    if (!queue_cur) {
 
       queue_cycle++;
       current_entry = 0;
       cur_skipped_paths = 0;
       queue_cur = queue;
-
-      while (seek_to) {
-        current_entry++;
-        seek_to--;
-        queue_cur = queue_cur->next;
-      }
 
       show_stats();
 
@@ -8515,9 +8475,6 @@ int main(int argc, char** argv) {
       /* BANDITS: no splicing. */
 
       cycles_wo_finds = 0;
-      
-
-      prev_queued = queued_paths;
 
       if (sync_id && queue_cycle == 1 && getenv("AFL_IMPORT_FIRST")) {
         sync_fuzzers(use_argv);
@@ -8551,7 +8508,7 @@ int main(int argc, char** argv) {
     struct queue_entry* queue_next = queue_cur->next;
     remove_from_queue(queue_cur);
     queue_cur = queue_next;
-    current_entry++;
+    queue_cycle++;
 
   }
 
