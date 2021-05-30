@@ -5382,7 +5382,7 @@ static u8 fuzz_one(char** argv) {
     fflush(stdout);
   }
 
-  DEBUG("[BANDITS DEBUG]: opening %s\n", queue_cur->fname);
+  DEBUG("[BANDITS DEBUG]: opening '%s'\n", queue_cur->fname);
 
   /* Map the test case into memory. */
 

@@ -118,6 +118,11 @@ mutation *sample_mutation(mutation *mutations, mutation *sentinel)
         prob.emplace_back(mutation_prob);
     }
 
+    // Log the number of mutations
+    log_fd << "[ITERATION " << time_step << "]: total mutations = "
+           << mut_size 
+           << "\n";
+
     // Use the doubling trick to adaptively set the right hyper-parameters. We 
     // compute the parameters after the probability so that we'll have the size 
     // of MUTATIONS.
