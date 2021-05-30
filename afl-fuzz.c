@@ -3668,46 +3668,6 @@ static void find_timeout(void) {
 
 }
 
-/* When resuming, try to find the queue position to start from. This makes sense
-   only when resuming, and when we can find the original fuzzer_stats. */
-
-static u32 find_start_position(void)
-{
-
-  static u8 tmp[4096]; /* Ought to be enough for anybody. */
-
-  u8 *fn, *off;
-  s32 fd, i;
-  u32 ret;
-
-  if (!resuming_fuzz)
-    return 0;
-
-  if (in_place_resume)
-    fn = alloc_printf("%s/fuzzer_stats", out_dir);
-  else
-    fn = alloc_printf("%s/../fuzzer_stats", in_dir);
-
-  fd = open(fn, O_RDONLY);
-  ck_free(fn);
-
-  if (fd < 0)
-    return 0;
-
-  i = read(fd, tmp, sizeof(tmp) - 1);
-  (void)i; /* Ignore errors */
-  close(fd);
-
-  off = strstr(tmp, "cur_path          : ");
-  if (!off)
-    return 0;
-
-  ret = atoi(off + 20);
-  if (ret >= queued_paths)
-    ret = 0;
-  return ret;
-}
-
 /* Update stats file for unattended monitoring. */
 
 static void write_stats_file(double bitmap_cvg, double stability, double eps) {
@@ -8093,7 +8053,7 @@ static void save_cmdline(u32 argc, char** argv) {
 int main(int argc, char** argv) {
 
   s32 opt;
-  u32 sync_interval_cnt = 0, seek_to;
+  u32 sync_interval_cnt = 0;
   u8  *extras_dir = 0;
   u8  mem_limit_given = 0;
   u8  exit_1 = !!getenv("AFL_BENCH_JUST_ONE");
@@ -8423,8 +8383,6 @@ int main(int argc, char** argv) {
 
   show_init_stats();
 
-  seek_to = find_start_position();
-
   write_stats_file(0, 0, 0);
   save_auto();
 
@@ -8509,7 +8467,7 @@ int main(int argc, char** argv) {
     remove_from_queue(queue_cur);
     queue_cur = queue_next;
     queue_cycle++;
-
+    queued_paths++;
   }
 
   if (queue_cur) {
