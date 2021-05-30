@@ -8442,6 +8442,10 @@ int main(int argc, char** argv) {
       break;
     }
 
+    if (skipped_fuzz) {
+      DEBUG("[BANDITS DEBUG]: queued input was skipped!\n");
+    }
+
     /* Advance the queue entry. This is where we're going to drop the entry 
        from the queue. */
 
