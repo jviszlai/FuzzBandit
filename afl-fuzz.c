@@ -869,7 +869,8 @@ static void remove_from_queue(struct queue_entry *q) {
   }
 
   if (queue == q) {
-    queue->next = q->next;
+    DEBUG("[BANDITS DEBUG]: deleting the head of queue!\n");
+    queue = q->next;
   }
 
   queued_paths--;
@@ -8485,6 +8486,11 @@ int main(int argc, char** argv) {
     u8 skipped_fuzz;
 
     cull_queue();
+
+    if (!queue_cur) {
+      
+
+    }
 
     if (!queue_cur) {
 
