@@ -273,15 +273,15 @@ struct queue_entry {
   u8* trace_mini;                     /* Trace bytes, if kept             */
   u32 tc_ref;                         /* Trace bytes ref count            */
 
-  struct queue_entry *next,           /* Next element, if any             */
-                     *next_100;       /* 100 elements ahead               */
+  struct queue_entry *next;           /* Next element, if any             */
+//                   *next_100;    /* 100 elements ahead (BANDITS: NO) */
 
 };
 
 static struct queue_entry *queue,     /* Fuzzing queue (linked list)      */
                           *queue_cur, /* Current offset within the queue  */
-                          *queue_top, /* Top of the list                  */
-                          *q_prev100; /* Previous 100 marker              */
+                          *queue_top; /* Top of the list                  */
+//                        *q_prev100; /* Previous 100 marker (BANDITS: NO)*/
 
 static struct queue_entry** top_rated;/* Top entries for bitmap bytes     */
 
@@ -845,18 +845,13 @@ static void add_to_queue(u8* fname, u32 len, u8 passed_det) {
     queue_top->next = q;
     queue_top = q;
   } else {
-    q_prev100 = queue = queue_top = q;
+    queue = queue_top = q;
   }
 
   queued_paths++;
   pending_not_fuzzed++;
 
   cycles_wo_finds = 0;
-
-  if (!(queued_paths % 100)) {
-    q_prev100->next_100 = q;
-    q_prev100 = q;
-  }
 
   last_path_time = get_cur_time();
 
@@ -868,6 +863,16 @@ static void add_to_queue(u8* fname, u32 len, u8 passed_det) {
 static void remove_from_queue(struct queue_entry *q) {
 
   DEBUG("[BANDITS DEBUG]: destroying %s\n", q->fname);
+
+  if (queue_top == q) {
+    FATAL("Deleting the back entry of the queue... that shouldn't happen\n");
+  }
+
+  if (queue == q) {
+    queue->next = q->next;
+  }
+
+  queued_paths--;
 
   // Lmao yolo
   ck_free(q->fname);
@@ -5387,8 +5392,7 @@ static u8 fuzz_one(char** argv) {
   u64 havoc_queued,
       orig_hit_cnt,
       new_hit_cnt;
-  u32 splice_cycle = 0,
-      perf_score = 100,
+  u32 perf_score = 100,
       prev_cksum, eff_cnt = 1;
 
   u8 ret_val = 1;
@@ -6964,13 +6968,8 @@ havoc_stage:
 
   new_hit_cnt = queued_paths + unique_crashes;
 
-  if (!splice_cycle) {
-    stage_finds[STAGE_HAVOC]  += new_hit_cnt - orig_hit_cnt;
-    stage_cycles[STAGE_HAVOC] += stage_max;
-  } else {
-    stage_finds[STAGE_SPLICE]  += new_hit_cnt - orig_hit_cnt;
-    stage_cycles[STAGE_SPLICE] += stage_max;
-  }
+  stage_finds[STAGE_HAVOC]  += new_hit_cnt - orig_hit_cnt;
+  stage_cycles[STAGE_HAVOC] += stage_max;
 
   /* BANDITS: sample a mutation to keep and skip splicing. */
 
@@ -6978,100 +6977,6 @@ havoc_stage:
 
   mutation* sampled_mut = sample_mutation(mutation_list, mutation_sentinel);
   save_to_queue(sampled_mut->argv, sampled_mut->input_buffer, sampled_mut->input_len, sampled_mut->fault_type);
-
-  goto abandon_entry;
-
-#ifndef IGNORE_FINDS
-
-  /************
-   * SPLICING *
-   ************/
-
-  /* This is a last-resort strategy triggered by a full round with no findings.
-     It takes the current input file, randomly selects another input, and
-     splices them together at some offset, then relies on the havoc
-     code to mutate that blob. */
-
-retry_splicing:
-
-  if (use_splicing && splice_cycle++ < SPLICE_CYCLES &&
-      queued_paths > 1 && queue_cur->len > 1) {
-
-    struct queue_entry* target;
-    u32 tid, split_at;
-    u8* new_buf;
-    s32 f_diff, l_diff;
-
-    /* First of all, if we've modified in_buf for havoc, let's clean that
-       up... */
-
-    if (in_buf != orig_in) {
-      ck_free(in_buf);
-      in_buf = orig_in;
-      len = queue_cur->len;
-    }
-
-    /* Pick a random queue entry and seek to it. Don't splice with yourself. */
-
-    do { tid = UR(queued_paths); } while (tid == current_entry);
-
-    splicing_with = tid;
-    target = queue;
-
-    while (tid >= 100) { target = target->next_100; tid -= 100; }
-    while (tid--) target = target->next;
-
-    /* Make sure that the target has a reasonable length. */
-
-    while (target && (target->len < 2 || target == queue_cur)) {
-      target = target->next;
-      splicing_with++;
-    }
-
-    if (!target) goto retry_splicing;
-
-    /* Read the testcase into a new buffer. */
-
-    fd = open(target->fname, O_RDONLY);
-
-    if (fd < 0) PFATAL("Unable to open '%s'", target->fname);
-
-    new_buf = ck_alloc_nozero(target->len);
-
-    ck_read(fd, new_buf, target->len, target->fname);
-
-    close(fd);
-
-    /* Find a suitable splicing location, somewhere between the first and
-       the last differing byte. Bail out if the difference is just a single
-       byte or so. */
-
-    locate_diffs(in_buf, new_buf, MIN(len, target->len), &f_diff, &l_diff);
-
-    if (f_diff < 0 || l_diff < 2 || f_diff == l_diff) {
-      ck_free(new_buf);
-      goto retry_splicing;
-    }
-
-    /* Split somewhere between the first and last differing byte. */
-
-    split_at = f_diff + UR(l_diff - f_diff);
-
-    /* Do the thing. */
-
-    len = target->len;
-    memcpy(new_buf, in_buf, split_at);
-    in_buf = new_buf;
-
-    ck_free(out_buf);
-    out_buf = ck_alloc_nozero(len);
-    memcpy(out_buf, in_buf, len);
-
-    goto havoc_stage;
-
-  }
-
-#endif /* !IGNORE_FINDS */
 
   ret_val = 0;
 
@@ -8572,9 +8477,9 @@ int main(int argc, char** argv) {
     DEBUG("-----------------------------------------------------------------------------\n");
 
     if (queue_cur == queue) {
-      DEBUG("[BANDIT DEBUG]: The initial state has queue_cur = queue\n");
+      DEBUG("[BANDITS DEBUG]: The initial state has queue_cur = queue\n");
     } else {
-      DEBUG("[BANDIT DEBUG]: The initial state DOES NOT have queue_cur = queue\n");
+      DEBUG("[BANDITS DEBUG]: The initial state DOES NOT have queue_cur = queue\n");
     }
 
     u8 skipped_fuzz;
@@ -8601,20 +8506,10 @@ int main(int argc, char** argv) {
         fflush(stdout);
       }
 
-      /* If we had a full queue cycle with no new finds, try
-         recombination strategies next. */
+      /* BANDITS: no splicing. */
 
-      if (queued_paths == prev_queued) {
-
-        if (use_splicing) {
-          cycles_wo_finds++; 
-        } else {
-          use_splicing = 1;
-        }
-
-      } else {
-        cycles_wo_finds = 0;
-      }
+      cycles_wo_finds = 0;
+      
 
       prev_queued = queued_paths;
 
