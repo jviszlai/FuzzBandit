@@ -5326,50 +5326,7 @@ static u8 fuzz_one(char** argv) {
   u32 orig_dsf_cumulated[DSF_LEN];
   memcpy(orig_dsf_cumulated, dsf_cumulated, dsf_len_actual*sizeof(u32));
 
-#ifdef IGNORE_FINDS
-
-  /* In IGNORE_FINDS mode, skip any entries that weren't in the
-     initial data set. */
-
-  if (queue_cur->depth > 1) {
-    return 1;
-  }
-
-#else
-
-  if (pending_favored || (dsf_enabled && queued_favored)) {
-
-    /* If we have any favored, non-fuzzed new arrivals in the queue,
-       possibly skip to them at the expense of already-fuzzed or non-favored
-       cases. */
-
-    /* in DSF mode, queue inputs remain favored even if 
-       they were previously fuzzed */
-
-    if (((queue_cur->was_fuzzed && !dsf_enabled) || !queue_cur->favored) &&
-        UR(100) < SKIP_TO_NEW_PROB) {
-      return 1;
-    }
-
-  } else if (!dumb_mode && !queue_cur->favored && queued_paths > 10) {
-
-    /* Otherwise, still possibly skip non-favored cases, albeit less often.
-       The odds of skipping stuff are higher for already-fuzzed inputs and
-       lower for never-fuzzed entries. */
-
-    if (queue_cycle > 1 && !queue_cur->was_fuzzed) {
-      if (UR(100) < SKIP_NFAV_NEW_PROB) {
-        return 1;
-      }
-    } else {
-      if (UR(100) < SKIP_NFAV_OLD_PROB) {
-        return 1;
-      }
-    }
-
-  }
-
-#endif /* ^IGNORE_FINDS */
+  /* BANDITS: never skip any test case. */
 
   DEBUG("===============Fuzzing test case #%u===============\n", current_entry);
 
