@@ -830,15 +830,19 @@ static void add_to_queue(u8* fname, u32 len, u8 passed_det) {
 
 static void remove_from_queue(struct queue_entry *q) {
 
-  DEBUG("[BANDITS DEBUG]: destroying %s\n", q->fname);
+  DEBUG("[BANDITS DEBUG]: remove queue '%s'\n", q->fname);
 
   if (queue_top == q) {
     PFATAL("Deleting the back entry of the queue... that shouldn't happen\n");
   }
 
   if (queue == q) {
-    DEBUG("[BANDITS DEBUG]: deleting the head of queue!\n");
     queue = q->next;
+  }
+
+  // Delete the file from the queue folder
+  if (unlink(q->fname)) {
+    PFATAL("Unable to delete '%s'", q->fname);
   }
 
   // Update globals
@@ -1395,8 +1399,6 @@ static void update_bitmap_score(struct queue_entry* q) {
 
 static void cull_queue(void) {
 
-  DEBUG("[BANDITS DEBUG]: Calling cull_queue\n");
-
   struct queue_entry* q;
   
   u32 i;
@@ -1414,13 +1416,9 @@ static void cull_queue(void) {
 
   /* Set all queue elements to unfavored. */
 
-  int q_index = 0;
-
   while (q) {
-    DEBUG("[BANDITS DEBUG]: Queue elem %d: %s\n", q_index, q->fname);
     q->favored = 0;
     q = q->next;
-    q_index++;
   }
 
   if (dsf_enabled) {
@@ -2690,12 +2688,6 @@ static void write_to_testcase(void* mem, u32 len) {
   
   }
 
-  // BANDITS: debug by doing some logging
-  // DEBUG("[BANDITS DEBUG]: writing testcase...\n");
-  // DEBUG("\tfd = %d\n", fd);
-  // DEBUG("\tmem ptr = 0x%\n", (uintptr_t) mem);
-  // DEBUG("\twrt len = %d\n", len);
-
   ck_write(fd, mem, len, out_file);
 
   if (!out_file) {
@@ -3415,7 +3407,7 @@ static u8 save_to_queue(char** argv, void* mem, u32 len, u8 fault) {
 
 #endif /* ^!SIMPLE_FILES */
 
-  DEBUG("[BANDITS DEBUG]: adding %s to queue\n", fn);
+  DEBUG("[BANDITS DEBUG]: add queue '%s'\n", fn);
 
   add_to_queue(fn, len, 0);
 
@@ -5310,8 +5302,6 @@ static u8 could_be_interest(u32 old_val, u32 new_val, u8 blen, u8 check_le) {
 
 static u8 fuzz_one(char** argv) {
 
-  DEBUG("[BANDITS DEBUG]: Calling fuzz_one\n");
-
   s32 len,
       fd,
       temp_len,
@@ -6906,7 +6896,7 @@ havoc_stage:
 
   /* BANDITS: sample a mutation to keep and skip splicing. */
 
-  DEBUG("[BANDITS DEBUG]: entering bandits code...\n");
+  DEBUG("[BANDITS DEBUG]: entering bandits code.\n");
 
   mutation* sampled_mut = sample_mutation(mutation_list, mutation_sentinel);
   save_to_queue(sampled_mut->argv, sampled_mut->input_buffer, sampled_mut->input_len, sampled_mut->fault_type);
@@ -8404,14 +8394,6 @@ int main(int argc, char** argv) {
 
   while (1) {
 
-    DEBUG("-----------------------------------------------------------------------------\n");
-
-    if (queue_cur == queue) {
-      DEBUG("[BANDITS DEBUG]: The initial state has queue_cur = queue\n");
-    } else {
-      DEBUG("[BANDITS DEBUG]: The initial state DOES NOT have queue_cur = queue\n");
-    }
-
     u8 skipped_fuzz;
 
     cull_queue();
@@ -8468,6 +8450,7 @@ int main(int argc, char** argv) {
     queue_cur = queue_next;
     queue_cycle++;
     queued_paths++;
+    current_entry++;
   }
 
   if (queue_cur) {
