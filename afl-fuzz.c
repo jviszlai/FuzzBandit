@@ -5174,7 +5174,7 @@ EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len) {
     FATAL("Mutations list is empty. This should never happen.");
   }
 
-  DEBUG("[BANDITS DEBUG]: Alloc (%d) 0x%p\n", cur_mut->mut_id, &cur_mut);
+  DEBUG("[BANDITS DEBUG]: Alloc (%d) %p\n", cur_mut->mut_id, cur_mut);
 
   /* BANDITS: Flip a bit if a fault occurred. */
 
@@ -7145,7 +7145,7 @@ abandon_entry:
       ck_free(cur_mut->mut_q);
     }
 
-    DEBUG("[BANDITS DEBUG]: Free (%d) 0x%p\n", cur_mut->mut_id, &cur_mut);
+    DEBUG("[BANDITS DEBUG]: Free (%d) %p\n", cur_mut->mut_id, cur_mut);
     ck_free(cur_mut); // Can I even do this? YES
   }
 
