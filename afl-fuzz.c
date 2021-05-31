@@ -8586,6 +8586,8 @@ int main(int argc, char** argv) {
 
   while (1) {
 
+    DEBUG("\n--->\n\n");
+
     // DO SOME LOGGING OF THE QUEUE
     struct queue_entry* q = queue;
     int q_index = 0;
