@@ -62,6 +62,10 @@ extern "C"
     /* Struct containing data for a mutation in a round of fuzzing */
     typedef struct mutation
     {
+        int mut_id;                     /* Index in the mutations list. Note 
+                                           don't use this for sampling since 
+                                           the queue is added to like a stack. */
+
         int fault_bit;                  /* whether or not this mutation crashed. */
         uint8_t fault_type;             /* the type of fault. See enum above. */
         uint32_t dsf_scores[NUM_DOMAINS];   /* domain specific scores. */

@@ -348,6 +348,11 @@ enum {
 
 /* BANDITS: Struct containing data for a mutation in a round of fuzzing */
 typedef struct mutation {
+
+  int mut_id;                  /* Index in the mutations list. Note 
+                                  don't use this for sampling since 
+                                  the queue is added to like a stack. */
+
   int fault_bit;               /* whether or not this mutation crashed. */
   u8 fault_type;               /* the type of fault. See enum above. */
   u32 dsf_scores[DSF_MAX];     /* domain specific scores. */
@@ -832,7 +837,7 @@ static void mark_as_redundant(struct queue_entry* q, u8 state) {
 static struct queue_entry* init_queue_entry(char** argv, void* mem, u32 len) {
 
   DEBUG("[BANDITS DEBUG]: queue_cur in INIT_QUEUE_ENTRY TOP '%s'\n", queue_cur->fname);
-  char* queue_cur_fn = alloc_printf("%s", queue_cur->fname);
+  char *queue_cur_fn = alloc_printf("%s", queue_cur->fname);
 
   /* BANDITS: get the savefile name. */
 
@@ -5186,6 +5191,7 @@ EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len) {
 
   struct mutation *cur_mut = ck_alloc_nozero(sizeof(struct mutation));
   if (mutation_list) {
+    cur_mut->mut_id = mutation_list->mut_id + 1;
     cur_mut->next = mutation_list;
     mutation_list = cur_mut;
   } else {
@@ -5621,6 +5627,7 @@ static u8 fuzz_one(char** argv) {
   /* BANDITS: create the list of mutations by initializing a sentinel node. */
 
   mutation_sentinel = ck_alloc_nozero(sizeof(struct mutation));
+  mutation_sentinel->mut_id = -1;
 
   mutation_list = mutation_sentinel;
 
@@ -7114,6 +7121,7 @@ havoc_stage:
   DEBUG("[BANDITS DEBUG]: queue_cur BEFORE SAMPLING '%s'\n", queue_cur->fname);
 
   mutation* sampled_mut = sample_mutation(mutation_list, mutation_sentinel);
+  int sampled_mut_id = sampled_mut->mut_id;
 
   DEBUG("[BANDITS DEBUG]: queue_cur BEFORE SAVING '%s'\n", queue_cur->fname);
 
@@ -7151,7 +7159,7 @@ abandon_entry:
   while (mutation_list != mutation_sentinel) {
     mutation *cur_mut = mutation_list;
 
-    if (((void *)&cur_mut) == ((void *)&queue_cur) || ((void *)&cur_mut) == ((void *)&(queue_cur->next))) {
+    if (cur_mut->mut_id == sampled_mut_id) {
       DEBUG("YOU FREED THE QUEUED ENTRY YOU CHUMP\n");
     }
 
