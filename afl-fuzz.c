@@ -867,8 +867,7 @@ static struct queue_entry* init_queue_entry(char** argv, void* mem, u32 len) {
   q->depth = cur_depth + 1;
   q->passed_det = 0;
 
-  // DEBUG("[BANDITS DEBUG]: init queue entry '%s'\n", q->fname);
-  // DEBUG("[BANDITS DEBUG]: - original name %s\n", fn);
+  DEBUG("[BANDITS DEBUG]: queue_cur in INIT_QUEUE_ENTRY '%s'\n", queue_cur->fname);
 
   /* Copy over the input buffer. */
 
@@ -7088,8 +7087,15 @@ havoc_stage:
 
   DEBUG("[BANDITS DEBUG]: entering bandits code.\n");
 
+  DEBUG("[BANDITS DEBUG]: queue_cur BEFORE SAMPLING '%s'\n", queue_cur->fname);
+
   mutation* sampled_mut = sample_mutation(mutation_list, mutation_sentinel);
+
+  DEBUG("[BANDITS DEBUG]: queue_cur BEFORE SAVING '%s'\n", queue_cur->fname);
+
   save_to_queue(sampled_mut->mut_q);
+
+  DEBUG("[BANDITS DEBUG]: queue_cur AFTER SAVING '%s'\n", queue_cur->fname);
 
   ret_val = 0;
 
