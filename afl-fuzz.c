@@ -874,7 +874,7 @@ static struct queue_entry* init_queue_entry(char** argv, void* mem, u32 len) {
 
   /* Copy over the input buffer. */
 
-  q->buf = ck_alloc_nozero(len * sizeof(u8));
+  q->buf = ck_alloc(len * sizeof(u8));
   memcpy(q->buf, mem, len);
 
   if (hnb == 2) {
@@ -5164,7 +5164,7 @@ EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len) {
      mutation list being computed, set the list as the next pointer of the
      current mutation and proceed. */
 
-  struct mutation *cur_mut = ck_alloc_nozero(sizeof(struct mutation));
+  struct mutation *cur_mut = ck_alloc(sizeof(struct mutation));
 
   if (mutation_list) {
     cur_mut->mut_id = mutation_list->mut_id + 1;
@@ -5609,7 +5609,7 @@ static u8 fuzz_one(char** argv) {
 
   /* BANDITS: create the list of mutations by initializing a sentinel node. */
 
-  mutation_sentinel = ck_alloc_nozero(sizeof(struct mutation));
+  mutation_sentinel = ck_alloc(sizeof(struct mutation));
   mutation_sentinel->mut_id = -1;
 
   mutation_list = mutation_sentinel;
