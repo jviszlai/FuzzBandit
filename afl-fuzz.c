@@ -364,6 +364,17 @@ EXP_ST mutation *mutation_sentinel; /* The end of the mutation list. */
 /* BANDITS: the sampling strategy. */
 mutation *sample_mutation(mutation *mutations, mutation *sentinel);
 
+/* Why can't they declare every function at the top. */
+static inline u8 has_new_bits(u8 *virgin_map);
+static inline u8 has_dsf_changed();
+static u32 count_bytes(u8 *mem);
+static u8 run_target(char** argv, u32 timeout);
+static u8 calibrate_queue_entry(struct queue_entry *q, u32 handicap);
+EXP_ST void destroy_queue_entry(struct queue_entry* q);
+static void update_bitmap_score(struct queue_entry *q);
+static u32 calculate_score(struct queue_entry* q);
+
+
 void DEBUG (char const *fmt, ...) {
     static FILE *f = NULL;
     if (f == NULL) {
@@ -1130,6 +1141,17 @@ static void remove_from_queue(struct queue_entry *q) {
   destroy_queue_entry(q);
 }
 
+/* Destroy one entry of the queue. */
+
+EXP_ST void destroy_queue_entry(struct queue_entry* q) {
+
+  ck_free(q->fname);
+  ck_free(q->trace_mini);
+  ck_free(q->buf);
+  ck_free(q);
+
+}
+
 /* Destroy the entire queue. */
 
 EXP_ST void destroy_queue(void) {
@@ -1143,17 +1165,6 @@ EXP_ST void destroy_queue(void) {
     q = n;
 
   }
-
-}
-
-/* Destroy one entry of the queue. */
-
-EXP_ST void destroy_queue_entry(struct queue_entry* q) {
-
-  ck_free(q->fname);
-  ck_free(q->trace_mini);
-  ck_free(q->buf);
-  ck_free(q);
 
 }
 
