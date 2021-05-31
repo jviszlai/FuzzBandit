@@ -1153,8 +1153,11 @@ static void remove_from_queue(struct queue_entry *q) {
 
 EXP_ST void destroy_queue_entry(struct queue_entry* q) {
 
+  DEBUG("[BANDITS DEBUG]: ...... Freeing fname %s\n", q->fname);
   ck_free(q->fname);
+  DEBUG("[BANDITS DEBUG]: ...... Freeing trace_mini\n");
   ck_free(q->trace_mini);
+  DEBUG("[BANDITS DEBUG]: ...... Freeing buf\n");
   ck_free(q->buf);
 
 }
@@ -7137,15 +7140,20 @@ abandon_entry:
     mutation *cur_mut = mutation_list;
     mutation_list = mutation_list->next;
 
+    DEBUG("[BANDITS DEBUG]: Free (%d) %p\n", cur_mut->mut_id, cur_mut);
+
     /* Pro-tip: don't free the queue entry about to be added to the 
        main queue. */
 
     if (sampled_mut_id != -1 && cur_mut->mut_id != sampled_mut_id) {
+      DEBUG("[BANDITS DEBUG]: - Destroy mut_q %p\n", cur_mut->mut_q);
+      DEBUG("[BANDITS DEBUG]: - Print queue %p\n", queue);
+      DEBUG("[BANDITS DEBUG]: - Print queue_cur %p\n", queue_cur);
+
       destroy_queue_entry(cur_mut->mut_q);
       ck_free(cur_mut->mut_q);
     }
 
-    DEBUG("[BANDITS DEBUG]: Free (%d) %p\n", cur_mut->mut_id, cur_mut);
     ck_free(cur_mut); // Can I even do this? YES
   }
 
