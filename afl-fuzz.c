@@ -8591,6 +8591,7 @@ int main(int argc, char** argv) {
     int q_index = 0;
     while (q) {
       DEBUG("[BANDITS DEBUG]: queue(%d) '%s'\n", q_index, q->fname);
+      q = q->next;
     }
 
     u8 skipped_fuzz;
