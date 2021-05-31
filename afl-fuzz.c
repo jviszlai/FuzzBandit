@@ -7150,7 +7150,7 @@ abandon_entry:
   while (mutation_list != mutation_sentinel) {
     mutation *cur_mut = mutation_list;
 
-    if (cur_mut == queue_cur || cur_mut == queue_cur->next) {
+    if (((void *)cur_mut) == ((void *)queue_cur) || ((void *)cur_mut) == ((void *)queue_cur->next)) {
       DEBUG("YOU FREED THE QUEUED ENTRY YOU CHUMP\n");
     }
 
