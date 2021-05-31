@@ -846,6 +846,10 @@ static struct queue_entry* init_queue_entry(char** argv, void* mem, u32 len) {
     dsf_changed = has_dsf_changed();
   }
 
+  if (strcmp(queue_cur->fname, queue_cur_fn) != 0) {
+    DEBUG("\nSHITS BROKE! (after init lines): '%s'\n\n", queue_cur->fname);
+  }
+
 #ifndef SIMPLE_FILES
 
   fn = alloc_printf("%s/queue/id:%06u,%s%s", 
@@ -860,6 +864,10 @@ static struct queue_entry* init_queue_entry(char** argv, void* mem, u32 len) {
 
 #endif /* ^!SIMPLE_FILES */
 
+  if (strcmp(queue_cur->fname, queue_cur_fn) != 0) {
+    DEBUG("\nSHITS BROKE! (after fn set): '%s'\n\n", queue_cur->fname);
+  }
+
   /* BANDITS: create the new queue_entry. */
 
   struct queue_entry *q = ck_alloc(sizeof(struct queue_entry));
@@ -869,6 +877,10 @@ static struct queue_entry* init_queue_entry(char** argv, void* mem, u32 len) {
   q->argv = argv;
   q->depth = cur_depth + 1;
   q->passed_det = 0;
+
+  if (strcmp(queue_cur->fname, queue_cur_fn) != 0) {
+    DEBUG("\nSHITS BROKE! (after init queue): '%s'\n\n", queue_cur->fname);
+  }
 
   /* Copy over the input buffer. */
 
@@ -884,10 +896,17 @@ static struct queue_entry* init_queue_entry(char** argv, void* mem, u32 len) {
     q->dsf_cksum = hash32(dsf_map, dsf_len_actual * sizeof(u32), HASH_CONST);
   }
 
+  if (strcmp(queue_cur->fname, queue_cur_fn) != 0) {
+    DEBUG("\nSHITS BROKE! (after cksum stuf): '%s'\n\n", queue_cur->fname);
+  }
+
   /* Try to calibrate inline; this also calls update_bitmap_score() when
      successful. */
 
   u8 res = calibrate_queue_entry(q, queue_cycle - 1);
+  if (strcmp(queue_cur->fname, queue_cur_fn) != 0) {
+    DEBUG("\nSHITS BROKE! (after calibrate queue): '%s'\n\n", queue_cur->fname);
+  }
 
   if (res == FAULT_ERROR) {
     FATAL("Unable to execute target application");
@@ -895,10 +914,7 @@ static struct queue_entry* init_queue_entry(char** argv, void* mem, u32 len) {
 
   /* BANDITS: return the freshly created queue_entry. */
 
-  DEBUG("\t- queue_cur in INIT_QUEUE_ENTRY BOTTOM '%s'\n", queue_cur->fname);
-  if (strcmp(queue_cur->fname, queue_cur_fn) != 0) {
-    DEBUG("\nSHITS BROKE!\n");
-  }
+  DEBUG("\t-> queue_cur in INIT_QUEUE_ENTRY final '%s'\n", queue_cur->fname);
   ck_free(queue_cur_fn);
 
     return q;
