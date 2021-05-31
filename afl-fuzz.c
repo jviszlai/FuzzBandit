@@ -867,6 +867,9 @@ static struct queue_entry* init_queue_entry(char** argv, void* mem, u32 len) {
   q->depth = cur_depth + 1;
   q->passed_det = 0;
 
+  DEBUG("[BANDITS DEBUG]: init queue entry '%s'\n", q->fname);
+  DEBUG("[BANDITS DEBUG]: - original name %s\n", fn);
+
   /* Copy over the input buffer. */
 
   q->buf = ck_alloc_nozero(len * sizeof(u8));
