@@ -1066,6 +1066,8 @@ static void add_to_queue(u8* fname, u32 len, u8 passed_det) {
 
 static void save_to_queue(struct queue_entry *q) {
 
+  DEBUG("[BANDITS DEBUG]: save queue '%s'", q->fname);
+
   /* BANDITS: Place Q at the back of QUEUE. Update QUEUE_TOP to 
      point to Q. */
 
