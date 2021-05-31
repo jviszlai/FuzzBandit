@@ -3557,6 +3557,7 @@ static void pivot_inputs(void) {
     /* Pivot to the new queue entry. */
 
     link_or_copy(q->fname, nfn);
+    DEBUG("[BANDITS DEBUG]: PIVOT FREED THE FILENAME '%s'\n", q->fname);
     ck_free(q->fname);
     q->fname = nfn;
 
