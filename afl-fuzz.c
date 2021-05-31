@@ -832,6 +832,7 @@ static void mark_as_redundant(struct queue_entry* q, u8 state) {
 static struct queue_entry* init_queue_entry(char** argv, void* mem, u32 len) {
 
   DEBUG("[BANDITS DEBUG]: queue_cur in INIT_QUEUE_ENTRY TOP '%s'\n", queue_cur->fname);
+  char* queue_cur_fn = alloc_printf("%s", queue_cur->fname);
 
   /* BANDITS: get the savefile name. */
 
@@ -895,8 +896,12 @@ static struct queue_entry* init_queue_entry(char** argv, void* mem, u32 len) {
   /* BANDITS: return the freshly created queue_entry. */
 
   DEBUG("\t- queue_cur in INIT_QUEUE_ENTRY BOTTOM '%s'\n", queue_cur->fname);
+  if (strcmp(queue_cur->fname, queue_cur_fn) != 0) {
+    DEBUG("\nSHITS BROKE!\n");
+  }
+  ck_free(queue_cur_fn);
 
-  return q;
+    return q;
 }
 
 /* BANDITS: Runs a round of calibration to populate all meta-data for 
