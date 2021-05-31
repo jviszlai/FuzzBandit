@@ -894,6 +894,8 @@ static struct queue_entry* init_queue_entry(char** argv, void* mem, u32 len) {
 
   /* BANDITS: return the freshly created queue_entry. */
 
+  DEBUG("\t- queue_cur in INIT_QUEUE_ENTRY BOTTOM '%s'\n", queue_cur->fname);
+
   return q;
 }
 
@@ -995,7 +997,6 @@ static u8 calibrate_queue_entry(struct queue_entry *q, u32 handicap) {
 
     }
 
-    DEBUG("\t- queue_cur in INIT_QUEUE_ENTRY BOTTOM '%s'\n", queue_cur->fname);
   }
 
   stop_us = get_cur_time_us();
