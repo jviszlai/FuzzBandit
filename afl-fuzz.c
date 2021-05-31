@@ -1153,7 +1153,7 @@ static void remove_from_queue(struct queue_entry *q) {
 
 EXP_ST void destroy_queue_entry(struct queue_entry* q) {
 
-  DEBUG("[BANDITS DEBUG]: ...... Freeing fname %s\n", q->fname);
+  DEBUG("[BANDITS DEBUG]: ...... Freeing fname '%s' addr '%p'\n", q->fname, &(q->fname));
   ck_free(q->fname);
   DEBUG("[BANDITS DEBUG]: ...... Freeing trace_mini\n");
   ck_free(q->trace_mini);
@@ -1189,7 +1189,9 @@ EXP_ST void write_bitmap(void) {
   u8* fname;
   s32 fd;
 
-  if (!bitmap_changed) return;
+  if (!bitmap_changed) {
+    return;
+  }
   bitmap_changed = 0;
 
   fname = alloc_printf("%s/fuzz_bitmap", out_dir);
