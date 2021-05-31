@@ -5580,6 +5580,11 @@ static u8 fuzz_one(char** argv) {
   u32 orig_dsf_cumulated[DSF_LEN];
   memcpy(orig_dsf_cumulated, dsf_cumulated, dsf_len_actual*sizeof(u32));
 
+  /* BANDITS: set a sampled mutation id since you don't want to free the 
+     sampled mut_q. */
+  
+  int sampled_mut_id = -1;
+
   /* BANDITS: never skip any test case. */
 
   DEBUG("===============Fuzzing test case #%u===============\n", current_entry);
@@ -7121,7 +7126,7 @@ havoc_stage:
   DEBUG("[BANDITS DEBUG]: queue_cur BEFORE SAMPLING '%s'\n", queue_cur->fname);
 
   mutation* sampled_mut = sample_mutation(mutation_list, mutation_sentinel);
-  int sampled_mut_id = sampled_mut->mut_id;
+  sampled_mut_id = sampled_mut->mut_id;
 
   DEBUG("[BANDITS DEBUG]: queue_cur BEFORE SAVING '%s'\n", queue_cur->fname);
 
@@ -7158,15 +7163,16 @@ abandon_entry:
   
   while (mutation_list != mutation_sentinel) {
     mutation *cur_mut = mutation_list;
-
-    if (cur_mut->mut_id == sampled_mut_id) {
-      DEBUG("YOU FREED THE QUEUED ENTRY YOU CHUMP\n");
-    }
-
     mutation_list = mutation_list->next;
-    destroy_queue_entry(cur_mut->mut_q);
-    ck_free(cur_mut->mut_q);
-    ck_free(cur_mut);
+
+    /* Pro-tip: don't free the queue entry about to be added to the 
+       main queue. */
+
+    if (sampled_mut_id != -1 && cur_mut->mut_id != sampled_mut_id) {
+      destroy_queue_entry(cur_mut->mut_q);
+      ck_free(cur_mut->mut_q);
+    }
+    ck_free(cur_mut); // CAN I EVEN DO THIS?
   }
 
   /* BANDITS: then free the sentinel. */
