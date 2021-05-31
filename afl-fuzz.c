@@ -867,8 +867,8 @@ static struct queue_entry* init_queue_entry(char** argv, void* mem, u32 len) {
   q->depth = cur_depth + 1;
   q->passed_det = 0;
 
-  DEBUG("[BANDITS DEBUG]: init queue entry '%s'\n", q->fname);
-  DEBUG("[BANDITS DEBUG]: - original name %s\n", fn);
+  // DEBUG("[BANDITS DEBUG]: init queue entry '%s'\n", q->fname);
+  // DEBUG("[BANDITS DEBUG]: - original name %s\n", fn);
 
   /* Copy over the input buffer. */
 
@@ -8628,6 +8628,8 @@ int main(int argc, char** argv) {
       }
     }
 
+    DEBUG("[BANDITS DEBUG]: queue_cur BEFORE fuzz_one '%s'\n", queue_cur->fname);
+
     /* Calls fuzz_one. */
 
     skipped_fuzz = fuzz_one(use_argv);
@@ -8655,6 +8657,8 @@ int main(int argc, char** argv) {
 
     /* Advance the queue entry. This is where we're going to drop the entry 
        from the queue. */
+
+    DEBUG("[BANDITS DEBUG]: queue_cur AFTER fuzz_one '%s'\n", queue_cur->fname);
 
     struct queue_entry* queue_next = queue_cur->next;
     remove_from_queue(queue_cur);
