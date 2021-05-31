@@ -125,7 +125,7 @@ mutation *sample_mutation(mutation *mutations, mutation *sentinel)
     log_fd.open(log_fn, ios_base::app);
 
     // Create the advice vector
-    std::vector<std::vector<double>> advice(NUM_DOMAINS,
+    std::vector<std::vector<double>> advice(NUM_FEEDBACK,
                                             std::vector<double>(0));
     get_advice(advice, mutations, sentinel);
 
