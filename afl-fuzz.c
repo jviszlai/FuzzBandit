@@ -252,6 +252,8 @@ struct queue_entry {
 
   u8* fname;                          /* File name for the test case      */
   u32 len;                            /* Input length                     */
+  u8* buf;                            /* Input buffer.                    */
+  char **argv;                        /* argv for the input.              */
 
   u8  cal_failed,                     /* Calibration failed?              */
       trim_done,                      /* Trimmed?                         */
@@ -274,14 +276,12 @@ struct queue_entry {
   u32 tc_ref;                         /* Trace bytes ref count            */
 
   struct queue_entry *next;           /* Next element, if any             */
-//                   *next_100;    /* 100 elements ahead (BANDITS: NO) */
 
 };
 
 static struct queue_entry *queue,     /* Fuzzing queue (linked list)      */
                           *queue_cur, /* Current offset within the queue  */
                           *queue_top; /* Top of the list                  */
-//                        *q_prev100; /* Previous 100 marker (BANDITS: NO)*/
 
 static struct queue_entry** top_rated;/* Top entries for bitmap bytes     */
 
@@ -348,12 +348,13 @@ enum {
 
 /* BANDITS: Struct containing data for a mutation in a round of fuzzing */
 typedef struct mutation {
-  char **argv;                 /* argv for the input. */
-  int input_len;               /* length of the buffer. */
-  u8 *input_buffer;            /* buffer containing the input contents. */
   int fault_bit;               /* whether or not this mutation crashed. */
   u8 fault_type;               /* the type of fault. See enum above. */
   u32 dsf_scores[DSF_MAX];     /* domain specific scores. */
+  u32 afl_score;               /* the score used by AFL. */
+  u32 bitmap_size;             /* measures code coverage. */
+  u64 exec_us;                 /* average exec time computed in calibration. */
+  struct queue_entry *mut_q;   /* the queue entry for this mutation. */
   struct mutation *next;       /* next mutation in the linked list. */
 } mutation;
 
@@ -793,12 +794,229 @@ static void mark_as_redundant(struct queue_entry* q, u8 state) {
 
 }
 
+/*****************************************************************************
+ * QUEUE OPERATIONS
+ * ----------------
+ * Functions that manage the central queue.
+ * - init_queue_entry
+ * - calibrate_queue_entry
+ * - add_to_queue
+ * - save_to_queue
+ * - remove_from_queue
+ * - destroy_queue
+ *****************************************************************************/
 
-/* Append new test case to the queue. */
+/* Initializes a new queue_entry to be added to QUEUE. This does the 
+   full initialization setting trace_bits and everything. 
+   
+   The main assumption is that common_fuzz_stuff(...) already executed this 
+   testcase and so the right bits are still in trace_bits. */
+
+static struct queue_entry* init_queue_entry(char** argv, void* mem, u32 len) {
+
+  /* BANDITS: get the savefile name. */
+
+  u8 *fn = "";
+  u8 hnb = has_new_bits(virgin_bits);
+
+  /* BANDITS: determine if DSF has changed. */
+
+  u8 dsf_changed = 0;
+  if (dsf_enabled) {
+    dsf_changed = has_dsf_changed();
+  }
+
+#ifndef SIMPLE_FILES
+
+  fn = alloc_printf("%s/queue/id:%06u,%s%s", 
+                    out_dir, 
+                    queued_paths,
+                    describe_op(hnb), 
+                    (dsf_enabled && dsf_changed) ? ",+dsf" : "");
+
+#else
+
+  fn = alloc_printf("%s/queue/id_%06u", out_dir, queued_paths);
+
+#endif /* ^!SIMPLE_FILES */
+
+  /* BANDITS: create the new queue_entry. */
+
+  struct queue_entry *q = ck_alloc(sizeof(struct queue_entry));
+
+  q->fname = fn;
+  q->len = len;
+  q->argv = argv;
+  q->depth = cur_depth + 1;
+  q->passed_det = 0;
+
+  /* Copy over the input buffer. */
+
+  q->buf = ck_alloc_nozero(len * sizeof(u8));
+  memcpy(q->buf, mem, len);
+
+  if (hnb == 2) {
+    q->has_new_cov = 1;
+  }
+
+  q->exec_cksum = hash32(trace_bits, MAP_SIZE, HASH_CONST);
+  if (dsf_enabled) {
+    q->dsf_cksum = hash32(dsf_map, dsf_len_actual * sizeof(u32), HASH_CONST);
+  }
+
+  /* Try to calibrate inline; this also calls update_bitmap_score() when
+     successful. */
+
+  u8 res = calibrate_queue_entry(q, queue_cycle - 1);
+
+  if (res == FAULT_ERROR) {
+    FATAL("Unable to execute target application");
+  }
+
+  /* BANDITS: return the freshly created queue_entry. */
+
+  return q;
+}
+
+/* BANDITS: Runs a round of calibration to populate all meta-data for 
+   this queue entry. */
+
+static u8 calibrate_queue_entry(struct queue_entry *q, u32 handicap) {
+  
+  static u8 first_trace[MAP_SIZE];
+
+  u8 fault = 0,
+     new_bits = 0,
+     var_detected = 0,
+     first_run = (q->exec_cksum == 0);
+
+  u64 start_us, stop_us;
+
+  s32 old_sc = stage_cur,
+      old_sm = stage_max;
+  u32 use_tmout = exec_tmout;
+  u8 *old_sn = stage_name;
+
+  q->cal_failed++;
+
+  stage_name = "queue calibration";
+  stage_max  = fast_cal ? 3 : CAL_CYCLES;
+
+  /* Make sure the forkserver is up before we do anything, and let's not
+     count its spin-up time toward binary calibration. */
+
+  if (dumb_mode != 1 && !no_forkserver && !forksrv_pid) {
+    init_forkserver(q->argv);
+  }
+
+  if (q->exec_cksum) {
+    memcpy(first_trace, trace_bits, MAP_SIZE);
+  }
+
+  start_us = get_cur_time_us();
+
+  for (stage_cur = 0; stage_cur < stage_max; stage_cur++) {
+
+    u32 cksum;
+
+    if (!first_run && !(stage_cur % stats_update_freq)) {
+      show_stats();
+    }
+
+    write_to_testcase(q->buf, q->len);
+
+    fault = run_target(q->argv, use_tmout);
+
+    /* stop_soon is set by the handler for Ctrl+C. When it's pressed,
+       we want to bail out quickly. */
+
+    if (stop_soon || fault != crash_mode) {
+      goto abort_queue_calibration;
+    }
+
+    if (!dumb_mode && !stage_cur && !count_bytes(trace_bits)) {
+      fault = FAULT_NOINST;
+      goto abort_queue_calibration;
+    }
+
+    cksum = hash32(trace_bits, MAP_SIZE, HASH_CONST);
+
+    if (q->exec_cksum != cksum) {
+
+      u8 hnb = has_new_bits(virgin_bits);
+      
+      if (hnb > new_bits) {
+        new_bits = hnb;
+      }
+
+      if (q->exec_cksum) {
+
+        u32 i;
+
+        for (i = 0; i < MAP_SIZE; i++) {
+          if (!var_bytes[i] && first_trace[i] != trace_bits[i]) {
+            var_bytes[i] = 1;
+            stage_max = CAL_CYCLES_LONG;
+          }
+        }
+
+        var_detected = 1;
+
+      } else {
+
+        q->exec_cksum = cksum;
+        
+        /* setup the dsf cksum here. Assume it is not variable, or that 
+          variability will be detected in the regular checking */ 
+        
+        if (dsf_enabled) {
+          q->dsf_cksum = hash32(dsf_map, dsf_len_actual * sizeof(u32), HASH_CONST);
+        }
+           
+        memcpy(first_trace, trace_bits, MAP_SIZE);
+
+      }
+
+    }
+
+  }
+
+  stop_us = get_cur_time_us();
+
+  total_cal_us += stop_us - start_us;
+  total_cal_cycles += stage_max;
+
+  /* OK, let's collect some stats about the performance of this test case.
+     This is used for fuzzing air time calculations in calculate_score(). */
+
+  q->exec_us = (stop_us - start_us) / stage_max;
+  q->bitmap_size = count_bytes(trace_bits);
+  q->handicap = handicap;
+  q->cal_failed = 0;
+
+  total_bitmap_size += q->bitmap_size;
+  total_bitmap_entries++;
+
+  update_bitmap_score(q);
+
+abort_queue_calibration:
+
+  /* Reset previous stage names. */
+
+  stage_name = old_sn;
+  stage_cur  = old_sc;
+  stage_max  = old_sm;
+
+  if (!first_run) {
+    show_stats();
+  }
+
+  return fault;
+}
 
 static void add_to_queue(u8* fname, u32 len, u8 passed_det) {
 
-  struct queue_entry* q = ck_alloc(sizeof(struct queue_entry));
+  struct queue_entry *q = ck_alloc(sizeof(struct queue_entry));
 
   q->fname = fname;
   q->len = len;
@@ -825,6 +1043,63 @@ static void add_to_queue(u8* fname, u32 len, u8 passed_det) {
 
 }
 
+/* BANDITS: queue's the input case unconditionally. Returns 1 if entry 
+   is saved, 0 otherwise. 
+   
+   NOTE(antaresc): ah this is why save_to_queue was always saving with 
+   the wrong filename... hnb, virgin_bits, etc. are all bits from 
+   executing the last mutation. */
+
+static void save_to_queue(struct queue_entry *q) {
+
+  /* BANDITS: Place Q at the back of QUEUE. Update QUEUE_TOP to 
+     point to Q. */
+
+  if (q->depth > max_depth) {
+    max_depth = q->depth;
+  }
+
+  if (queue_top) {
+    queue_top->next = q;
+    queue_top = q;
+  } else {
+    queue = queue_top = q;
+  }
+
+  /* BANDITS: Update the globals. */
+
+  queued_paths++;
+  pending_not_fuzzed++;
+
+  cycles_wo_finds = 0;
+
+  last_path_time = get_cur_time();
+
+  if (q->has_new_cov) {
+    queued_with_cov++;
+  }
+
+  /* Now we call calibrate_case because we're actually saving the 
+     input to QUEUE. */
+
+  u8 res = calibrate_case(q->argv, q, q->buf, queue_cycle - 1, 0);
+
+  if (res == FAULT_ERROR) {
+    FATAL("Unable to execute target application");
+  }
+
+  s32 fd = open(q->fname, O_WRONLY | O_CREAT | O_EXCL, 0600);
+  if (fd < 0) {
+    PFATAL("Unable to create '%s'", q->fname);
+  }
+  ck_write(fd, q->buf, q->len, q->fname);
+  close(fd);
+
+  /* BANDITS: return that the input was added to the queue. */
+
+  return 1;
+}
+
 /* BANDITS: deletes an entry from the queue. At the end of every iteration of 
    the fuzzer, this function deletes the recently run element in the queue. */
 
@@ -835,26 +1110,24 @@ static void remove_from_queue(struct queue_entry *q) {
   if (queue_top == q) {
     PFATAL("Deleting the back entry of the queue... that shouldn't happen\n");
   }
-
   if (queue == q) {
     queue = q->next;
   }
 
-  // Delete the file from the queue folder
+  /* Delete the file from the queue folder. */
+  
   if (unlink(q->fname)) {
     PFATAL("Unable to delete '%s'", q->fname);
   }
 
-  // Update globals
-  total_bitmap_size -= q->bitmap_size;
-  total_bitmap_entries--;
+  /* Update globals. Let's not mess with the bitmap. */
+  
   queued_paths--;
 
-  // Lmao yolo
-  ck_free(q->fname);
-  ck_free(q->trace_mini);
-  ck_free(q);
+  /* Lmao yolo. Btw, we shouldn't need to free **argv since it's the 
+     same argv from the main loop and it's used everywhere. */
 
+  destroy_queue_entry(q);
 }
 
 /* Destroy the entire queue. */
@@ -866,12 +1139,21 @@ EXP_ST void destroy_queue(void) {
   while (q) {
 
     n = q->next;
-    ck_free(q->fname);
-    ck_free(q->trace_mini);
-    ck_free(q);
+    destroy_queue_entry(q);
     q = n;
 
   }
+
+}
+
+/* Destroy one entry of the queue. */
+
+EXP_ST void destroy_queue_entry(struct queue_entry* q) {
+
+  ck_free(q->fname);
+  ck_free(q->trace_mini);
+  ck_free(q->buf);
+  ck_free(q);
 
 }
 
@@ -1017,21 +1299,25 @@ int hibit(unsigned int n) {
 static inline u8 has_dsf_changed() {
   int ret = 0;
   for (int j = 0; j < dsf_count; j++) {
+
     dsf_config* dsf = &dsf_configs[j];              // Config for this domain
     reducer_t reduce = dsf_reducers[dsf->reducer];  // Reducer function for this domain
-    for (int i = dsf->start; i < dsf->end; i++){
+
+    for (int i = dsf->start; i < dsf->end; i++) {
+      
       u32 cur_val = dsf_map[i];
       u32 old_cumulated = dsf_cumulated[i];
       u32 new_cumulated = reduce(old_cumulated, cur_val);
+
       if (unlikely(old_cumulated != new_cumulated)) {
         dsf_cumulated[i] = new_cumulated;
         ret = 1;
         dsf_entry_changed[i] = 1;
-        // DEBUG("DSF update at key=0x%06x, val=%u (0x%08x); new aggregate: %u (0x%08x); earlier was: %u (0x%08x)\n", i, cur_val, cur_val, new_cumulated, new_cumulated, old_cumulated, old_cumulated);
       }
-    }
-  }
 
+    }
+
+  }
   return ret;
 }
 
@@ -1328,44 +1614,50 @@ static void update_bitmap_score(struct queue_entry* q) {
 
   u32 i;
 
-  if (dsf_enabled){
+  if (dsf_enabled) {
+    
     for (int j = 0; j < dsf_count; j++) {
+      
       dsf_config* dsf = &dsf_configs[j];
+      
       for (i = dsf->start; i < dsf->end; i++) {
-        /* Did the entry in the DSF map change this run? */
+
+        /* Did the entry in the DSF map change this run? If so, insert 
+           ourselves as the new winner. */
+
         if (dsf_entry_changed[i]) {
-          /* Insert ourselves as the new winner. */
           top_rated[i] = q;
           score_changed = 1;
           dsf_entry_changed[i] = 0;
         }
       }
+
     }
+  
   } else {
 
     u64 fav_factor = q->exec_us * q->len;
 
-    for (i = 0; i < MAP_SIZE; i++)
+    for (i = 0; i < MAP_SIZE; i++) {
 
-      if (unlikely(trace_bits[i])) {
-         
-         if (top_rated[i]) {
+      if (unlikely(trace_bits[i])) {         
+        if (top_rated[i]) {
 
-           /* Faster-executing or smaller test cases are favored. */
+          /* Faster-executing or smaller test cases are favored. */
 
-           if (fav_factor > top_rated[i]->exec_us * top_rated[i]->len) {
-             continue;
-           }
+          if (fav_factor > top_rated[i]->exec_us * top_rated[i]->len) {
+            continue;
+          }
 
-           /* Looks like we're going to win. Decrease ref count for the
-              previous winner, discard its trace_bits[] if necessary. */
+          /* Looks like we're going to win. Decrease ref count for the
+            previous winner, discard its trace_bits[] if necessary. */
 
-           if (!--top_rated[i]->tc_ref) {
-             ck_free(top_rated[i]->trace_mini);
-             top_rated[i]->trace_mini = 0;
-           }
+          if (!--top_rated[i]->tc_ref) {
+            ck_free(top_rated[i]->trace_mini);
+            top_rated[i]->trace_mini = 0;
+          }
 
-         }
+        }
 
         /* Insert ourselves as the new winner. */
 
@@ -1380,12 +1672,11 @@ static void update_bitmap_score(struct queue_entry* q) {
           minimize_bits(q->trace_mini, trace_bits);
         }
         score_changed = 1;
+      }
 
-       }
+    } 
 
   }
-
-
 }
 
 
@@ -1531,6 +1822,7 @@ EXP_ST void setup_shm(void) {
 }
 
 /* set the cumulated DSF map to the provided initial value */
+
 EXP_ST void setup_dsf_cumulated() {
   for (int i = 0; i < dsf_count; i++) {
     int dsf_start = dsf_configs[i].start;
@@ -1543,7 +1835,6 @@ EXP_ST void setup_dsf_cumulated() {
 
   // memset(dsf_cumulated, 0, dsf_len_actual * sizeof(u32));
 }
-
 
 /* Load postprocessor, if available. */
 
@@ -1570,7 +1861,6 @@ static void setup_post(void) {
   OKF("Postprocessor installed successfully.");
 
 }
-
 
 /* Read all testcases from the input directory, then queue them for testing.
    Called at startup. */
@@ -1691,7 +1981,6 @@ static int compare_extras_use_d(const void* p1, const void* p2) {
 
   return e2->hit_cnt - e1->hit_cnt;
 }
-
 
 /* Read extras from a file, sort by size. */
 
@@ -1829,7 +2118,6 @@ static void load_extras_file(u8* fname, u32* min_len, u32* max_len,
 
 }
 
-
 /* Read extras from the extras directory and sort them by size. */
 
 static void load_extras(u8* dir) {
@@ -1929,9 +2217,6 @@ check_and_sort:
 
 }
 
-
-
-
 /* Helper function for maybe_add_auto() */
 
 static inline u8 memcmp_nocase(u8* m1, u8* m2, u32 len) {
@@ -1940,7 +2225,6 @@ static inline u8 memcmp_nocase(u8* m1, u8* m2, u32 len) {
   return 0;
 
 }
-
 
 /* Maybe add automatic extra. */
 
@@ -2047,7 +2331,6 @@ sort_a_extras:
 
 }
 
-
 /* Save automatically generated extras. */
 
 static void save_auto(void) {
@@ -2074,7 +2357,6 @@ static void save_auto(void) {
   }
 
 }
-
 
 /* Load automatically generated extras. */
 
@@ -2118,7 +2400,6 @@ static void load_auto(void) {
 
 }
 
-
 /* Destroy extras. */
 
 static void destroy_extras(void) {
@@ -2144,7 +2425,6 @@ static void destroy_extras(void) {
    In essence, the instrumentation allows us to skip execve(), and just keep
    cloning a stopped child. So, we just execute once, and then send commands
    through a pipe. The other part of this logic is in afl-as.h. */
-
 
 EXP_ST void init_forkserver(char** argv) {
 
@@ -2735,7 +3015,9 @@ static void show_stats(void);
 
 /* Calibrate a new test case. This is done when processing the input directory
    to warn about flaky or otherwise problematic test cases early on; and when
-   new paths are discovered to detect variable behavior and so on. */
+   new paths are discovered to detect variable behavior and so on. 
+   
+   NOTE: USE_MEM is the test case's binary contents. */
 
 static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
                          u32 handicap, u8 from_queue) {
@@ -2766,7 +3048,7 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
 
   q->cal_failed++;
 
-  stage_name = "calibration";
+  stage_name = "case calibration";
   stage_max  = fast_cal ? 3 : CAL_CYCLES;
 
   /* Make sure the forkserver is up before we do anything, and let's not
@@ -2798,12 +3080,12 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
        we want to bail out quickly. */
 
     if (stop_soon || fault != crash_mode) {
-      goto abort_calibration;
+      goto abort_case_calibration;
     }
 
     if (!dumb_mode && !stage_cur && !count_bytes(trace_bits)) {
       fault = FAULT_NOINST;
-      goto abort_calibration;
+      goto abort_case_calibration;
     }
 
     cksum = hash32(trace_bits, MAP_SIZE, HASH_CONST);
@@ -2821,14 +3103,10 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
         u32 i;
 
         for (i = 0; i < MAP_SIZE; i++) {
-
           if (!var_bytes[i] && first_trace[i] != trace_bits[i]) {
-
             var_bytes[i] = 1;
-            stage_max    = CAL_CYCLES_LONG;
-
+            stage_max = CAL_CYCLES_LONG;
           }
-
         }
 
         var_detected = 1;
@@ -2838,8 +3116,10 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
         q->exec_cksum = cksum;
         /* setup the dsf cksum here. Assume it is not variable, or that 
           variability will be detected in the regular checking */ 
-        if (dsf_enabled) 
-          q->dsf_cksum = hash32(dsf_map, dsf_len_actual*sizeof(u32), HASH_CONST); 
+        if (dsf_enabled) {
+          q->dsf_cksum = hash32(dsf_map, dsf_len_actual * sizeof(u32), HASH_CONST);
+        }
+           
         memcpy(first_trace, trace_bits, MAP_SIZE);
 
       }
@@ -2850,16 +3130,16 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
 
   stop_us = get_cur_time_us();
 
-  total_cal_us     += stop_us - start_us;
+  total_cal_us += stop_us - start_us;
   total_cal_cycles += stage_max;
 
   /* OK, let's collect some stats about the performance of this test case.
      This is used for fuzzing air time calculations in calculate_score(). */
 
-  q->exec_us     = (stop_us - start_us) / stage_max;
+  q->exec_us = (stop_us - start_us) / stage_max;
   q->bitmap_size = count_bytes(trace_bits);
-  q->handicap    = handicap;
-  q->cal_failed  = 0;
+  q->handicap = handicap;
+  q->cal_failed = 0;
 
   total_bitmap_size += q->bitmap_size;
   total_bitmap_entries++;
@@ -2874,7 +3154,7 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
     fault = FAULT_NOBITS;
   }
 
-abort_calibration:
+abort_case_calibration:
 
   if (new_bits == 2 && !q->has_new_cov) {
     q->has_new_cov = 1;
@@ -3377,75 +3657,10 @@ static void save_as_perf_input(void * mem, u32 len) {
 
 }
 
-/* BANDITS: queue's the input case unconditionally. Returns 1 if entry 
-   is saved, 0 otherwise. */
-
-static u8 save_to_queue(char** argv, void* mem, u32 len, u8 fault) {
-
-  u8 *fn = "";
-  s32 fd;
-  u8 res;
-  u8 hnb = has_new_bits(virgin_bits);
-
-  /* BANDITS: determine if DSF has changed. */
-
-  u8 dsf_changed = 0;
-  if (dsf_enabled) {
-    dsf_changed = has_dsf_changed();
-  }
-
-  /* BANDITS: determine the savefile name. */
-
-#ifndef SIMPLE_FILES
-
-  fn = alloc_printf("%s/queue/id:%06u,%s%s", out_dir, queued_paths,
-                    describe_op(hnb), (dsf_enabled && dsf_changed) ? ",+dsf" : "");
-
-#else
-
-  fn = alloc_printf("%s/queue/id_%06u", out_dir, queued_paths);
-
-#endif /* ^!SIMPLE_FILES */
-
-  DEBUG("[BANDITS DEBUG]: add queue '%s'\n", fn);
-
-  add_to_queue(fn, len, 0);
-
-  if (hnb == 2) {
-    queue_top->has_new_cov = 1;
-    queued_with_cov++;
-  }
-
-  queue_top->exec_cksum = hash32(trace_bits, MAP_SIZE, HASH_CONST);
-  if (dsf_enabled) {
-    queue_top->dsf_cksum = hash32(dsf_map, dsf_len_actual * sizeof(u32), HASH_CONST);
-  }
-
-  /* Try to calibrate inline; this also calls update_bitmap_score() when
-     successful. */
-
-  res = calibrate_case(argv, queue_top, mem, queue_cycle - 1, 0);
-
-  if (res == FAULT_ERROR) {
-    FATAL("Unable to execute target application");
-  }
-
-  fd = open(fn, O_WRONLY | O_CREAT | O_EXCL, 0600);
-  if (fd < 0) {
-    PFATAL("Unable to create '%s'", fn);
-  }
-  ck_write(fd, mem, len, fn);
-  close(fd);
-
-  /* BANDITS: return that the input was added to the queue. */
-
-  return 1;
-}
-
 /* BANDITS: updates counters, and writes to crash / timeout folder as 
    appropriate for the given inputs. DOES NOT WRITE TO QUEUE. */
 
-static u8 save_to_other(char** argv, void* mem, u32 len, u8 fault) {
+static u8 save_fault(char** argv, void* mem, u32 len, u8 fault) {
 
   u8 *fn = "";
   s32 fd;
@@ -4815,8 +5030,10 @@ static u8 trim_case(char** argv, struct queue_entry* q, u8* in_buf) {
       if (stop_soon || fault == FAULT_ERROR) goto abort_trimming;
 
       /* Note that we don't keep track of crashes or hangs here; maybe TODO? */
-      if (dsf_enabled)
-        dsf_cksum = hash32(dsf_map, dsf_len_actual*sizeof(u32), HASH_CONST);
+      if (dsf_enabled) {
+        dsf_cksum = hash32(dsf_map, dsf_len_actual * sizeof(u32), HASH_CONST);
+      }
+        
       exec_cksum = hash32(trace_bits, MAP_SIZE, HASH_CONST);
 
         
@@ -4880,7 +5097,9 @@ static u8 trim_case(char** argv, struct queue_entry* q, u8* in_buf) {
     close(fd);
 
     memcpy(trace_bits, clean_trace, MAP_SIZE);
-    if (dsf_enabled) memcpy(dsf_map, clean_dsf, dsf_len_actual*sizeof(u32));
+    if (dsf_enabled) {
+      memcpy(dsf_map, clean_dsf, dsf_len_actual * sizeof(u32));
+    }
     update_bitmap_score(q);
 
   }
@@ -4899,40 +5118,30 @@ abort_trimming:
 
 EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len) {
 
-  u8 fault;
-
   if (post_handler) {
-
     out_buf = post_handler(out_buf, &len);
-    if (!out_buf || !len) return 0;
-
+    if (!out_buf || !len) {
+      return 0;
+    }
   }
 
   write_to_testcase(out_buf, len);
 
-  fault = run_target(argv, exec_tmout);
+  u8 fault = run_target(argv, exec_tmout);
 
-  if (stop_soon) return 1;
-
-  if (fault == FAULT_TMOUT) {
-
-    if (subseq_tmouts++ > TMOUT_LIMIT) {
-      cur_skipped_paths++;
-      return 1;
-    }
-
-  } else subseq_tmouts = 0;
-
-  /* Users can hit us with SIGUSR1 to request the current input
-     to be abandoned. */
-
-  if (skip_requested) {
-
-     skip_requested = 0;
-     cur_skipped_paths++;
-     return 1;
-
+  if (stop_soon) {
+    return 1;
   }
+
+  /* This handles FAULT_ERROR for us: */
+
+  queued_discovered += save_fault(argv, out_buf, len, fault);
+
+  /* BANDITS: call init_queue_entry here since trace_bits are correct. 
+     
+     NOTE: this has the effect of calling update_bitmap_score() everytime. */
+
+  struct queue_entry* mut_q = init_queue_entry(argv, out_buf, len);
 
   /* BANDITS: Setup mutation data to be collected. If there is already a  
      mutation list being computed, set the list as the next pointer of the
@@ -4945,13 +5154,6 @@ EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len) {
   } else {
     FATAL("Mutations list is empty. This should never happen.");
   }
-
-  /* BANDITS: Store input arguments and buffer containing the actual input. */
-
-  cur_mut->argv = argv;
-  cur_mut->input_len = len;
-  cur_mut->input_buffer = ck_alloc_nozero(len * sizeof(u8));
-  memcpy(cur_mut->input_buffer, out_buf, len);
 
   /* BANDITS: Flip a bit if a fault occurred. */
 
@@ -4972,22 +5174,31 @@ EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len) {
     reducer_t reduce = dsf_reducers[dsf->reducer];
     u32 dsf_score = 0;
 
-    // Compute the domain specific score
+    /* Compute the domain specific score. */
+
     for (int i = dsf->start; i < dsf->end; i++) {
       u32 cur_val = dsf_map[i];
       dsf_score = reduce(dsf_score, cur_val);
     }
 
-    // Set the domain specific score to the feedback
+    /* Set the domain specific score to the feedback. */
+
     cur_mut->dsf_scores[j] = dsf_score;
   }
 
-  /* This handles FAULT_ERROR for us: */
+  /* BANDITS: store mut_q and the additional statistics used by bandits. 
+  
+     NOTE: Probably shouldn't store bitmap_size, and exec_us like this since 
+     it's already carried around by mut_q, but whatever. */
 
-  queued_discovered += save_to_other(argv, out_buf, len, fault);
+  cur_mut->mut_q = mut_q;
+  cur_mut->afl_score = calculate_score(mut_q);
+  cur_mut->bitmap_size = mut_q->bitmap_size;
+  cur_mut->exec_us = mut_q->exec_us;
 
-  if (!(stage_cur % stats_update_freq) || stage_cur + 1 == stage_max)
-    show_stats();
+  if (!(stage_cur % stats_update_freq) || stage_cur + 1 == stage_max) {
+      show_stats();
+  }
 
   return 0;
 
@@ -5373,6 +5584,7 @@ static u8 fuzz_one(char** argv) {
   /* BANDITS: create the list of mutations by initializing a sentinel node. */
 
   mutation_sentinel = ck_alloc_nozero(sizeof(struct mutation));
+
   mutation_list = mutation_sentinel;
 
   /*******************************************
@@ -5381,14 +5593,17 @@ static u8 fuzz_one(char** argv) {
 
   if (queue_cur->cal_failed) {
 
+    DEBUG("[BANDITS DEBUG]: Calibrating queue since previous calibration failed.\n");
+
     u8 res = FAULT_TMOUT;
 
     if (queue_cur->cal_failed < CAL_CHANCES) {
 
       res = calibrate_case(argv, queue_cur, in_buf, queue_cycle - 1, 0);
 
-      if (res == FAULT_ERROR)
+      if (res == FAULT_ERROR) {
         FATAL("Unable to execute target application");
+      }
 
     }
 
@@ -5435,14 +5650,18 @@ static u8 fuzz_one(char** argv) {
      this entry ourselves (was_fuzzed), or if it has gone through deterministic
      testing in earlier, resumed runs (passed_det). */
 
-  if (skip_deterministic || queue_cur->was_fuzzed || queue_cur->passed_det)
+  if (skip_deterministic || queue_cur->was_fuzzed || queue_cur->passed_det) {
+    DEBUG("[BANDITS DEBUG]: jump to havoc - entry was fuzzed (%d) or it passed det testing (%d)\n", queue_cur->was_fuzzed, queue_cur->passed_det);
     goto havoc_stage;
+  }
 
   /* Skip deterministic fuzzing if exec path checksum puts this out of scope
      for this master instance. */
 
-  if (master_max && (queue_cur->exec_cksum % master_max) != master_id - 1)
+  if (master_max && (queue_cur->exec_cksum % master_max) != master_id - 1) {
+    DEBUG("[BANDITS DEBUG]: jump to havoc - entry has something to do with max entry (%d) ?= (%d)\n", (queue_cur->exec_cksum % master_max), master_id - 1);
     goto havoc_stage;
+  }
 
   /*********************************************
    * SIMPLE BITFLIP (+dictionary construction) *
@@ -6856,7 +7075,7 @@ havoc_stage:
   DEBUG("[BANDITS DEBUG]: entering bandits code.\n");
 
   mutation* sampled_mut = sample_mutation(mutation_list, mutation_sentinel);
-  save_to_queue(sampled_mut->argv, sampled_mut->input_buffer, sampled_mut->input_len, sampled_mut->fault_type);
+  save_to_queue(sampled_mut->mut_q);
 
   ret_val = 0;
 
@@ -6870,12 +7089,16 @@ abandon_entry:
   if (!stop_soon && !queue_cur->cal_failed && !queue_cur->was_fuzzed) {
     queue_cur->was_fuzzed = 1;
     pending_not_fuzzed--;
-    if (queue_cur->favored) pending_favored--;
+    if (queue_cur->favored) {
+      pending_favored--;
+    }
   } 
 
   munmap(orig_in, queue_cur->len);
 
-  if (in_buf != orig_in) ck_free(in_buf);
+  if (in_buf != orig_in) {
+    ck_free(in_buf);
+  }
   ck_free(out_buf);
   ck_free(eff_map);
 
@@ -6884,6 +7107,7 @@ abandon_entry:
   while (mutation_list != mutation_sentinel) {
     mutation *cur_mut = mutation_list;
     mutation_list = mutation_list->next;
+    destroy_queue_entry(cur_mut->mut_q);
     ck_free(cur_mut);
   }
 
@@ -6998,7 +7222,7 @@ static void sync_fuzzers(char** argv) {
 
         if (mem == MAP_FAILED) PFATAL("Unable to mmap '%s'", path);
 
-        /* See what happens. We rely on save_to_other() to catch major
+        /* See what happens. We rely on save_fault() to catch major
            errors and save the test case. */
 
         write_to_testcase(mem, st.st_size);
@@ -7008,7 +7232,7 @@ static void sync_fuzzers(char** argv) {
         if (stop_soon) return;
 
         syncing_party = sd_ent->d_name;
-        queued_imported += save_to_other(argv, mem, st.st_size, fault);
+        queued_imported += save_fault(argv, mem, st.st_size, fault);
         syncing_party = 0;
 
         munmap(mem, st.st_size);
