@@ -365,12 +365,18 @@ EXP_ST mutation *mutation_sentinel; /* The end of the mutation list. */
 mutation *sample_mutation(mutation *mutations, mutation *sentinel);
 
 /* Why can't they declare every function at the top. */
+EXP_ST void init_forkserver(char** argv);
+static void write_to_testcase(void *mem, u32 len);
+static u8 *describe_op(u8 hnb);
 static inline u8 has_new_bits(u8 *virgin_map);
 static inline u8 has_dsf_changed();
+static void show_stats(void);
 static u32 count_bytes(u8 *mem);
 static u8 run_target(char** argv, u32 timeout);
 static u8 calibrate_queue_entry(struct queue_entry *q, u32 handicap);
 EXP_ST void destroy_queue_entry(struct queue_entry* q);
+static u8 calibrate_case(char **argv, struct queue_entry *q, u8 *use_mem,
+                         u32 handicap, u8 from_queue);
 static void update_bitmap_score(struct queue_entry *q);
 static u32 calculate_score(struct queue_entry* q);
 
@@ -3021,8 +3027,6 @@ static void write_with_gap(void* mem, u32 len, u32 skip_at, u32 skip_len) {
 
 }
 
-
-static void show_stats(void);
 
 /* Calibrate a new test case. This is done when processing the input directory
    to warn about flaky or otherwise problematic test cases early on; and when
