@@ -390,7 +390,7 @@ void DEBUG (char const *fmt, ...) {
     static FILE *f = NULL;
     if (f == NULL) {
       u8 * fn = alloc_printf("%s/fuzzfactory.log", out_dir);
-      f= fopen(fn, "w");
+      f = fopen(fn, "w");
       ck_free(fn);
     }
     va_list ap;
@@ -778,6 +778,10 @@ static void mark_as_variable(struct queue_entry* q) {
   }
 
   ck_free(ldest);
+
+  DEBUG("[BANDITS DEBUG]: mark_as_variable freeing fn '%s'\n", fn);
+  DEBUG("[BANDITS DEBUG]: ... addr '%p'\n", &fn);
+
   ck_free(fn);
 
   q->var_behavior = 1;
@@ -811,6 +815,9 @@ static void mark_as_redundant(struct queue_entry* q, u8 state) {
     if (unlink(fn)) PFATAL("Unable to remove '%s'", fn);
 
   }
+
+  DEBUG("[BANDITS DEBUG]: mark_as_redundant freeing fn '%s'\n", fn);
+  DEBUG("[BANDITS DEBUG]: ... addr '%p'\n", &fn);
 
   ck_free(fn);
 
@@ -1153,7 +1160,9 @@ static void remove_from_queue(struct queue_entry *q) {
 
 EXP_ST void destroy_queue_entry(struct queue_entry* q) {
 
-  DEBUG("[BANDITS DEBUG]: ...... Freeing fname '%s' addr '%p'\n", q->fname, &(q->fname));
+  DEBUG("[BANDITS DEBUG]: ...... Freeing fname '%s'\n", q->fname);
+  DEBUG("[BANDITS DEBUG]: ...... @ addr '%p'?\n", q->fname);
+  DEBUG("[BANDITS DEBUG]: ...... @ addr '%p'??\n", &(q->fname));
   ck_free(q->fname);
   DEBUG("[BANDITS DEBUG]: ...... Freeing trace_mini\n");
   ck_free(q->trace_mini);
@@ -3717,134 +3726,131 @@ static u8 save_fault(char** argv, void* mem, u32 len, u8 fault) {
   }
 
   switch (fault) {
+    case FAULT_TMOUT: {
 
-  case FAULT_TMOUT:
+      /* Timeouts are not very interesting, but we're still obliged to keep
+        a handful of samples. We use the presence of new bits in the
+        hang-specific bitmap as a signal of uniqueness. In "dumb" mode, we
+        just keep everything. */
 
-    /* Timeouts are not very interesting, but we're still obliged to keep
-       a handful of samples. We use the presence of new bits in the
-       hang-specific bitmap as a signal of uniqueness. In "dumb" mode, we
-       just keep everything. */
+      total_tmouts++;
 
-    total_tmouts++;
+      if (unique_hangs >= KEEP_UNIQUE_HANG) {
+        return keeping;
+      }
 
-    if (unique_hangs >= KEEP_UNIQUE_HANG) {
+      if (!dumb_mode) {
+
+  #ifdef __x86_64__
+        simplify_trace((u64 *)trace_bits);
+  #else
+        simplify_trace((u32 *)trace_bits);
+  #endif /* ^__x86_64__ */
+
+        if (!has_new_bits(virgin_tmout)) {
+          return keeping;
+        }
+      }
+
+      unique_tmouts++;
+
+      /* Before saving, we make sure that it's a genuine hang by re-running
+        the target with a more generous timeout (unless the default timeout
+        is already generous). */
+
+      if (exec_tmout < hang_tmout) {
+
+        u8 new_fault;
+        write_to_testcase(mem, len);
+        new_fault = run_target(argv, hang_tmout);
+
+        /* A corner case that one user reported bumping into: increasing the
+          timeout actually uncovers a crash. Make sure we don't discard it if
+          so. */
+
+        if (!stop_soon && new_fault == FAULT_CRASH) {
+          goto keep_as_crash;
+        }
+
+        if (stop_soon || new_fault != FAULT_TMOUT) {
+          return keeping;
+        }
+      }
+
+  #ifndef SIMPLE_FILES
+
+      fn = alloc_printf("%s/hangs/id:%06llu,%s", out_dir,
+                        unique_hangs, describe_op(0));
+
+  #else
+
+      fn = alloc_printf("%s/hangs/id_%06llu", out_dir,
+                        unique_hangs);
+
+  #endif /* ^!SIMPLE_FILES */
+
+      unique_hangs++;
+
+      last_hang_time = get_cur_time();
+
+      break;
+    }
+    case FAULT_CRASH: {
+
+    keep_as_crash:
+
+      /* This is handled in a manner roughly similar to timeouts,
+        except for slightly different limits and no need to re-run test
+        cases. */
+
+      total_crashes++;
+
+      if (unique_crashes >= KEEP_UNIQUE_CRASH) {
+        return keeping;
+      }
+
+      if (!dumb_mode) {
+
+  #ifdef __x86_64__
+        simplify_trace((u64 *)trace_bits);
+  #else
+        simplify_trace((u32 *)trace_bits);
+  #endif /* ^__x86_64__ */
+
+        if (!has_new_bits(virgin_crash)) {
+          return keeping;
+        }
+      }
+
+      if (!unique_crashes) {
+        write_crash_readme();
+      }
+
+  #ifndef SIMPLE_FILES
+
+      fn = alloc_printf("%s/crashes/id:%06llu,sig:%02u,%s", out_dir,
+                        unique_crashes, kill_signal, describe_op(0));
+
+  #else
+
+      fn = alloc_printf("%s/crashes/id_%06llu_%02u", out_dir, unique_crashes,
+                        kill_signal);
+
+  #endif /* ^!SIMPLE_FILES */
+
+      unique_crashes++;
+
+      last_crash_time = get_cur_time();
+      last_crash_execs = total_execs;
+
+      break; 
+    }
+    case FAULT_ERROR: {
+      FATAL("Unable to execute target application");
+    }
+    default: {
       return keeping;
     }
-
-    if (!dumb_mode) {
-
-#ifdef __x86_64__
-      simplify_trace((u64 *)trace_bits);
-#else
-      simplify_trace((u32 *)trace_bits);
-#endif /* ^__x86_64__ */
-
-      if (!has_new_bits(virgin_tmout)) {
-        return keeping;
-      }
-    }
-
-    unique_tmouts++;
-
-    /* Before saving, we make sure that it's a genuine hang by re-running
-       the target with a more generous timeout (unless the default timeout
-       is already generous). */
-
-    if (exec_tmout < hang_tmout) {
-
-      u8 new_fault;
-      write_to_testcase(mem, len);
-      new_fault = run_target(argv, hang_tmout);
-
-      /* A corner case that one user reported bumping into: increasing the
-         timeout actually uncovers a crash. Make sure we don't discard it if
-         so. */
-
-      if (!stop_soon && new_fault == FAULT_CRASH) {
-        goto keep_as_crash;
-      }
-
-      if (stop_soon || new_fault != FAULT_TMOUT) {
-        return keeping;
-      }
-    }
-
-#ifndef SIMPLE_FILES
-
-    fn = alloc_printf("%s/hangs/id:%06llu,%s", out_dir,
-                      unique_hangs, describe_op(0));
-
-#else
-
-    fn = alloc_printf("%s/hangs/id_%06llu", out_dir,
-                      unique_hangs);
-
-#endif /* ^!SIMPLE_FILES */
-
-    unique_hangs++;
-
-    last_hang_time = get_cur_time();
-
-    break;
-
-  case FAULT_CRASH:
-
-  keep_as_crash:
-
-    /* This is handled in a manner roughly similar to timeouts,
-       except for slightly different limits and no need to re-run test
-       cases. */
-
-    total_crashes++;
-
-    if (unique_crashes >= KEEP_UNIQUE_CRASH) {
-      return keeping;
-    }
-
-    if (!dumb_mode) {
-
-#ifdef __x86_64__
-      simplify_trace((u64 *)trace_bits);
-#else
-      simplify_trace((u32 *)trace_bits);
-#endif /* ^__x86_64__ */
-
-      if (!has_new_bits(virgin_crash)) {
-        return keeping;
-      }
-    }
-
-    if (!unique_crashes) {
-      write_crash_readme();
-    }
-
-#ifndef SIMPLE_FILES
-
-    fn = alloc_printf("%s/crashes/id:%06llu,sig:%02u,%s", out_dir,
-                      unique_crashes, kill_signal, describe_op(0));
-
-#else
-
-    fn = alloc_printf("%s/crashes/id_%06llu_%02u", out_dir, unique_crashes,
-                      kill_signal);
-
-#endif /* ^!SIMPLE_FILES */
-
-    unique_crashes++;
-
-    last_crash_time = get_cur_time();
-    last_crash_execs = total_execs;
-
-    break;
-
-  case FAULT_ERROR:
-    
-    FATAL("Unable to execute target application");
-
-  default:
-    
-    return keeping;
-  
   }
 
   /* If we're here, we apparently want to save the crash or hang
@@ -7150,6 +7156,8 @@ abandon_entry:
 
     if (sampled_mut_id != -1 && cur_mut->mut_id != sampled_mut_id) {
       DEBUG("[BANDITS DEBUG]: - Destroy mut_q %p\n", cur_mut->mut_q);
+      DEBUG("[BANDITS DEBUG]: - Print mut_q->fname %p\n", cur_mut->mut_q->fname);
+      DEBUG("[BANDITS DEBUG]: - Print &mut_q->fname %p\n", &(cur_mut->mut_q->fname));
       DEBUG("[BANDITS DEBUG]: - Print queue %p\n", queue);
       DEBUG("[BANDITS DEBUG]: - Print queue_cur %p\n", queue_cur);
 
