@@ -836,9 +836,6 @@ static void mark_as_redundant(struct queue_entry* q, u8 state) {
 
 static struct queue_entry* init_queue_entry(char** argv, void* mem, u32 len) {
 
-  DEBUG("[BANDITS DEBUG]: queue_cur in INIT_QUEUE_ENTRY TOP '%s'\n", queue_cur->fname);
-  char *queue_cur_fn = alloc_printf("%s", queue_cur->fname);
-
   /* BANDITS: get the savefile name. */
 
   u8 *fn = "";
@@ -849,10 +846,6 @@ static struct queue_entry* init_queue_entry(char** argv, void* mem, u32 len) {
   u8 dsf_changed = 0;
   if (dsf_enabled) {
     dsf_changed = has_dsf_changed();
-  }
-
-  if (strcmp(queue_cur->fname, queue_cur_fn) != 0) {
-    DEBUG("\nSHITS BROKE! (after init lines): '%s'\n\n", queue_cur->fname);
   }
 
 #ifndef SIMPLE_FILES
@@ -869,10 +862,6 @@ static struct queue_entry* init_queue_entry(char** argv, void* mem, u32 len) {
 
 #endif /* ^!SIMPLE_FILES */
 
-  if (strcmp(queue_cur->fname, queue_cur_fn) != 0) {
-    DEBUG("\nSHITS BROKE! (after fn set): '%s'\n\n", queue_cur->fname);
-  }
-
   /* BANDITS: create the new queue_entry. */
 
   struct queue_entry *q = ck_alloc(sizeof(struct queue_entry));
@@ -882,10 +871,6 @@ static struct queue_entry* init_queue_entry(char** argv, void* mem, u32 len) {
   q->argv = argv;
   q->depth = cur_depth + 1;
   q->passed_det = 0;
-
-  if (strcmp(queue_cur->fname, queue_cur_fn) != 0) {
-    DEBUG("\nSHITS BROKE! (after init queue): '%s'\n\n", queue_cur->fname);
-  }
 
   /* Copy over the input buffer. */
 
@@ -901,26 +886,16 @@ static struct queue_entry* init_queue_entry(char** argv, void* mem, u32 len) {
     q->dsf_cksum = hash32(dsf_map, dsf_len_actual * sizeof(u32), HASH_CONST);
   }
 
-  if (strcmp(queue_cur->fname, queue_cur_fn) != 0) {
-    DEBUG("\nSHITS BROKE! (after cksum stuf): '%s'\n\n", queue_cur->fname);
-  }
-
   /* Try to calibrate inline; this also calls update_bitmap_score() when
      successful. */
 
   u8 res = calibrate_queue_entry(q, queue_cycle - 1);
-  if (strcmp(queue_cur->fname, queue_cur_fn) != 0) {
-    DEBUG("\nSHITS BROKE! (after calibrate queue): '%s'\n\n", queue_cur->fname);
-  }
 
   if (res == FAULT_ERROR) {
     FATAL("Unable to execute target application");
   }
 
   /* BANDITS: return the freshly created queue_entry. */
-
-  DEBUG("\t-> queue_cur in INIT_QUEUE_ENTRY final '%s'\n", queue_cur->fname);
-  ck_free(queue_cur_fn);
 
     return q;
 }
@@ -5598,7 +5573,7 @@ static u8 fuzz_one(char** argv) {
     fflush(stdout);
   }
 
-  DEBUG("[BANDITS DEBUG]: opening '%s'\n", queue_cur->fname);
+  DEBUG("[BANDITS DEBUG]: open '%s'\n", queue_cur->fname);
 
   /* Map the test case into memory. */
 
@@ -7121,18 +7096,12 @@ havoc_stage:
 
   /* BANDITS: sample a mutation to keep and skip splicing. */
 
-  DEBUG("[BANDITS DEBUG]: entering bandits code.\n");
-
-  DEBUG("[BANDITS DEBUG]: queue_cur BEFORE SAMPLING '%s'\n", queue_cur->fname);
-
   mutation* sampled_mut = sample_mutation(mutation_list, mutation_sentinel);
   sampled_mut_id = sampled_mut->mut_id;
 
-  DEBUG("[BANDITS DEBUG]: queue_cur BEFORE SAVING '%s'\n", queue_cur->fname);
+  DEBUG("[BANDITS DEBUG]: sampled '%s'\n", sampled_mut->mut_q->fname);
 
   save_to_queue(sampled_mut->mut_q);
-
-  DEBUG("[BANDITS DEBUG]: queue_cur AFTER SAVING '%s'\n", queue_cur->fname);
 
   ret_val = 0;
 
@@ -7172,7 +7141,8 @@ abandon_entry:
       destroy_queue_entry(cur_mut->mut_q);
       ck_free(cur_mut->mut_q);
     }
-    ck_free(cur_mut); // CAN I EVEN DO THIS?
+
+    ck_free(cur_mut); // Can I even do this? YES
   }
 
   /* BANDITS: then free the sentinel. */
@@ -8639,23 +8609,11 @@ int main(int argc, char** argv) {
 
   while (1) {
 
-    DEBUG("\n--->\n\n");
-
-    // DO SOME LOGGING OF THE QUEUE
-    struct queue_entry* q = queue;
-    int q_index = 0;
-    while (q) {
-      DEBUG("[BANDITS DEBUG]: queue(%d) '%s'\n", q_index, q->fname);
-      q = q->next;
-    }
-
     u8 skipped_fuzz;
 
     cull_queue();
 
     if (!queue_cur) {
-
-      DEBUG("[BANDITS DEBUG]: queue_cur is empty!\n");
 
       queue_cycle++;
       current_entry = 0;
@@ -8678,8 +8636,6 @@ int main(int argc, char** argv) {
       }
     }
 
-    DEBUG("[BANDITS DEBUG]: queue_cur BEFORE fuzz_one '%s'\n", queue_cur->fname);
-
     /* Calls fuzz_one. */
 
     skipped_fuzz = fuzz_one(use_argv);
@@ -8701,14 +8657,8 @@ int main(int argc, char** argv) {
       break;
     }
 
-    if (skipped_fuzz) {
-      DEBUG("[BANDITS DEBUG]: queued input was skipped!\n");
-    }
-
     /* Advance the queue entry. This is where we're going to drop the entry 
        from the queue. */
-
-    DEBUG("[BANDITS DEBUG]: queue_cur AFTER fuzz_one '%s'\n", queue_cur->fname);
 
     struct queue_entry* queue_next = queue_cur->next;
     remove_from_queue(queue_cur);
