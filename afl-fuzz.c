@@ -7102,7 +7102,7 @@ havoc_stage:
   mutation* sampled_mut = sample_mutation(mutation_list, mutation_sentinel);
   sampled_mut_id = sampled_mut->mut_id;
 
-  DEBUG("[BANDITS DEBUG]: sampled '%s'\n", sampled_mut->mut_q->fname);
+  DEBUG("[BANDITS DEBUG]: sampled(%d) '%s'\n", sampled_mut->mut_id, sampled_mut->mut_q->fname);
 
   save_to_queue(sampled_mut->mut_q);
 
