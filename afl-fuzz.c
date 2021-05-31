@@ -7149,6 +7149,11 @@ abandon_entry:
   
   while (mutation_list != mutation_sentinel) {
     mutation *cur_mut = mutation_list;
+
+    if (cur_mut == queue_cur || cur_mut == queue_cur->next) {
+      DEBUG("YOU FREED THE QUEUED ENTRY YOU CHUMP\n");
+    }
+
     mutation_list = mutation_list->next;
     destroy_queue_entry(cur_mut->mut_q);
     ck_free(cur_mut);
