@@ -8602,6 +8602,8 @@ int main(int argc, char** argv) {
 
     if (!queue_cur) {
 
+      DEBUG("[BANDITS DEBUG]: queue_cur is empty!\n")
+
       queue_cycle++;
       current_entry = 0;
       cur_skipped_paths = 0;
