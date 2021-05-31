@@ -7142,6 +7142,7 @@ abandon_entry:
       ck_free(cur_mut->mut_q);
     }
 
+    DEBUG("[BANDITS DEBUG]: Freeing %d\n", cur_mut->mut_id);
     ck_free(cur_mut); // Can I even do this? YES
   }
 
@@ -8608,6 +8609,8 @@ int main(int argc, char** argv) {
   /* MAIN EXECUTION LOOP. */
 
   while (1) {
+
+    DEBUG("\n[BANDIT DEBUG]: New Iteration --->\n\n");
 
     u8 skipped_fuzz;
 
