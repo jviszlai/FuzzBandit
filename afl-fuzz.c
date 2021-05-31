@@ -1166,6 +1166,7 @@ static void remove_from_queue(struct queue_entry *q) {
      same argv from the main loop and it's used everywhere. */
 
   destroy_queue_entry(q);
+  ck_free(q);
 }
 
 /* Destroy one entry of the queue. */
@@ -1175,7 +1176,6 @@ EXP_ST void destroy_queue_entry(struct queue_entry* q) {
   ck_free(q->fname);
   ck_free(q->trace_mini);
   ck_free(q->buf);
-  ck_free(q);
 
 }
 
@@ -1189,6 +1189,7 @@ EXP_ST void destroy_queue(void) {
 
     n = q->next;
     destroy_queue_entry(q);
+    ck_free(q);
     q = n;
 
   }
@@ -7150,12 +7151,13 @@ abandon_entry:
   while (mutation_list != mutation_sentinel) {
     mutation *cur_mut = mutation_list;
 
-    if (((void *)cur_mut) == ((void *)queue_cur) || ((void *)cur_mut) == ((void *)queue_cur->next)) {
+    if (((void *)&cur_mut) == ((void *)&queue_cur) || ((void *)&cur_mut) == ((void *)&(queue_cur->next))) {
       DEBUG("YOU FREED THE QUEUED ENTRY YOU CHUMP\n");
     }
 
     mutation_list = mutation_list->next;
     destroy_queue_entry(cur_mut->mut_q);
+    ck_free(cur_mut->mut_q);
     ck_free(cur_mut);
   }
 
