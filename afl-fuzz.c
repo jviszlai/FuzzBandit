@@ -831,6 +831,8 @@ static void mark_as_redundant(struct queue_entry* q, u8 state) {
 
 static struct queue_entry* init_queue_entry(char** argv, void* mem, u32 len) {
 
+  DEBUG("[BANDITS DEBUG]: queue_cur in INIT_QUEUE_ENTRY TOP '%s'\n", queue_cur->fname);
+
   /* BANDITS: get the savefile name. */
 
   u8 *fn = "";
@@ -866,8 +868,6 @@ static struct queue_entry* init_queue_entry(char** argv, void* mem, u32 len) {
   q->argv = argv;
   q->depth = cur_depth + 1;
   q->passed_det = 0;
-
-  DEBUG("[BANDITS DEBUG]: queue_cur in INIT_QUEUE_ENTRY '%s'\n", queue_cur->fname);
 
   /* Copy over the input buffer. */
 
@@ -995,6 +995,7 @@ static u8 calibrate_queue_entry(struct queue_entry *q, u32 handicap) {
 
     }
 
+    DEBUG("\t- queue_cur in INIT_QUEUE_ENTRY BOTTOM '%s'\n", queue_cur->fname);
   }
 
   stop_us = get_cur_time_us();
