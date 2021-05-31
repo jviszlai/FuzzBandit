@@ -904,7 +904,6 @@ static u8 calibrate_queue_entry(struct queue_entry *q, u32 handicap) {
 
   u8 fault = 0,
      new_bits = 0,
-     var_detected = 0,
      first_run = (q->exec_cksum == 0);
 
   u64 start_us, stop_us;
@@ -976,8 +975,6 @@ static u8 calibrate_queue_entry(struct queue_entry *q, u32 handicap) {
             stage_max = CAL_CYCLES_LONG;
           }
         }
-
-        var_detected = 1;
 
       } else {
 
@@ -1112,9 +1109,6 @@ static void save_to_queue(struct queue_entry *q) {
   ck_write(fd, q->buf, q->len, q->fname);
   close(fd);
 
-  /* BANDITS: return that the input was added to the queue. */
-
-  return 1;
 }
 
 /* BANDITS: deletes an entry from the queue. At the end of every iteration of 
