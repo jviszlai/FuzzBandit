@@ -112,7 +112,6 @@ EXP_ST u8  skip_deterministic,        /* Skip deterministic stages?       */
            force_deterministic,       /* Force deterministic stages?      */
            use_splicing,              /* Recombine input files?           */
            dumb_mode,                 /* Run in non-instrumented mode?    */
-           score_changed,             /* Scoring for favorites changed?   */
            kill_signal,               /* Signal that killed the child     */
            resuming_fuzz,             /* Resuming an older fuzzing job?   */
            timeout_given,             /* Specific timeout given?          */
@@ -283,8 +282,6 @@ static struct queue_entry *queue,     /* Fuzzing queue (linked list)      */
                           *queue_cur, /* Current offset within the queue  */
                           *queue_top; /* Top of the list                  */
 
-static struct queue_entry** top_rated;/* Top entries for bitmap bytes     */
-
 struct extra_data {
   u8* data;                           /* Dictionary token data            */
   u32 len;                            /* Dictionary token length          */
@@ -382,7 +379,6 @@ static u8 calibrate_queue_entry(struct queue_entry *q, u32 handicap);
 EXP_ST void destroy_queue_entry(struct queue_entry* q);
 static u8 calibrate_case(char **argv, struct queue_entry *q, u8 *use_mem,
                          u32 handicap, u8 from_queue);
-static void update_bitmap_score(struct queue_entry *q);
 static u32 calculate_score(struct queue_entry* q);
 
 
@@ -790,38 +786,9 @@ static void mark_as_variable(struct queue_entry* q) {
 
 
 /* Mark / unmark as redundant (edge-only). This is not used for restoring state,
-   but may be useful for post-processing datasets. */
-
-static void mark_as_redundant(struct queue_entry* q, u8 state) {
-
-  u8* fn;
-  s32 fd;
-
-  if (state == q->fs_redundant) return;
-
-  q->fs_redundant = state;
-
-  fn = strrchr(q->fname, '/');
-  fn = alloc_printf("%s/queue/.state/redundant_edges/%s", out_dir, fn + 1);
-
-  if (state) {
-
-    fd = open(fn, O_WRONLY | O_CREAT | O_EXCL, 0600);
-    if (fd < 0) PFATAL("Unable to create '%s'", fn);
-    close(fd);
-
-  } else {
-
-    if (unlink(fn)) PFATAL("Unable to remove '%s'", fn);
-
-  }
-
-  DEBUG("[BANDITS DEBUG]: mark_as_redundant freeing fn '%s'\n", fn);
-  DEBUG("[BANDITS DEBUG]: ... addr '%p'\n", &fn);
-
-  ck_free(fn);
-
-}
+   but may be useful for post-processing datasets. 
+   
+   BANDITS: the big Delete. */
 
 /*****************************************************************************
  * QUEUE OPERATIONS
@@ -893,8 +860,7 @@ static struct queue_entry* init_queue_entry(char** argv, void* mem, u32 len) {
     q->dsf_cksum = hash32(dsf_map, dsf_len_actual * sizeof(u32), HASH_CONST);
   }
 
-  /* Try to calibrate inline; this also calls update_bitmap_score() when
-     successful. */
+  /* No more calling update_bitmap_score(). */
 
   u8 res = calibrate_queue_entry(q, queue_cycle - 1);
 
@@ -1022,8 +988,6 @@ static u8 calibrate_queue_entry(struct queue_entry *q, u32 handicap) {
 
   total_bitmap_size += q->bitmap_size;
   total_bitmap_entries++;
-
-  update_bitmap_score(q);
 
 abort_queue_calibration:
 
@@ -1163,11 +1127,17 @@ EXP_ST void destroy_queue_entry(struct queue_entry* q) {
   DEBUG("[BANDITS DEBUG]: ...... Freeing fname '%s'\n", q->fname);
   DEBUG("[BANDITS DEBUG]: ...... @ addr '%p'?\n", q->fname);
   DEBUG("[BANDITS DEBUG]: ...... @ addr '%p'??\n", &(q->fname));
-  ck_free(q->fname);
+  if (q->fname) {
+    ck_free(q->fname);
+  }
   DEBUG("[BANDITS DEBUG]: ...... Freeing trace_mini\n");
-  ck_free(q->trace_mini);
+  if (q->trace_mini) {
+    ck_free(q->trace_mini);
+  }
+  if (q->buf) {
+    ck_free(q->buf);
+  }
   DEBUG("[BANDITS DEBUG]: ...... Freeing buf\n");
-  ck_free(q->buf);
 
 }
 
@@ -1641,77 +1611,9 @@ static void minimize_bits(u8* dst, u8* src) {
    The first step of the process is to maintain a list of top_rated[] entries
    for every byte in the bitmap. We win that slot if there is no previous
    contender, or if the contender has a more favorable speed x size factor. 
+
+   BANDITS: removed
 */
-
-static void update_bitmap_score(struct queue_entry* q) {
-
-  u32 i;
-
-  if (dsf_enabled) {
-    
-    for (int j = 0; j < dsf_count; j++) {
-      
-      dsf_config* dsf = &dsf_configs[j];
-      
-      for (i = dsf->start; i < dsf->end; i++) {
-
-        /* Did the entry in the DSF map change this run? If so, insert 
-           ourselves as the new winner. */
-
-        if (dsf_entry_changed[i]) {
-          top_rated[i] = q;
-          score_changed = 1;
-          dsf_entry_changed[i] = 0;
-        }
-      }
-
-    }
-  
-  } else {
-
-    u64 fav_factor = q->exec_us * q->len;
-
-    for (i = 0; i < MAP_SIZE; i++) {
-
-      if (unlikely(trace_bits[i])) {         
-        if (top_rated[i]) {
-
-          /* Faster-executing or smaller test cases are favored. */
-
-          if (fav_factor > top_rated[i]->exec_us * top_rated[i]->len) {
-            continue;
-          }
-
-          /* Looks like we're going to win. Decrease ref count for the
-            previous winner, discard its trace_bits[] if necessary. */
-
-          if (!--top_rated[i]->tc_ref) {
-            ck_free(top_rated[i]->trace_mini);
-            top_rated[i]->trace_mini = 0;
-          }
-
-        }
-
-        /* Insert ourselves as the new winner. */
-
-        top_rated[i] = q;
-
-        /* change scores accordingly */
-
-        q->tc_ref++;
-
-        if (!q->trace_mini) {
-          q->trace_mini = ck_alloc(MAP_SIZE >> 3);
-          minimize_bits(q->trace_mini, trace_bits);
-        }
-        score_changed = 1;
-      }
-
-    } 
-
-  }
-}
-
 
 /* The second part of the mechanism discussed above is a routine that
    goes over top_rated[] entries, and then sequentially grabs winners for
@@ -1722,93 +1624,16 @@ static void update_bitmap_score(struct queue_entry* q) {
    In the dsf_enabled setting we only favor entries which achieve the max.*/
 
 static void cull_queue(void) {
-
-  struct queue_entry* q;
   
-  u32 i;
-
-  // if (dumb_mode || !score_changed) {
-  //   return;
-  // }
-
-  score_changed = 0;
-
-  queued_favored = 0;
   pending_favored = 0;
+  queued_favored = 0;
 
-  q = queue;
+  struct queue_entry* q = queue;
 
-  /* Set all queue elements to unfavored. */
+  /* Set all queue elements to unfavored. Nothing is favored... nothing. */
 
   while (q) {
     q->favored = 0;
-    q = q->next;
-  }
-
-  if (dsf_enabled) {
-
-    /* TOP_RATED is a list containing DSF_LEN number of favored queue 
-       elements. */
-
-    for (i = 0; i < dsf_len_actual; i++) {
-      if (top_rated[i]) {
-
-        /* If top rated for any i, will be favored */
-        
-        u8 was_favored_already = top_rated[i]->favored;
-        top_rated[i]->favored = 1;
-
-        /* Increments counts only if not also favored for another i */
-        
-        if (!was_favored_already){
-          queued_favored++;
-          if (!top_rated[i]->was_fuzzed) {
-            pending_favored++;
-          }
-        }
-      }
-    }
-  } else {
-
-    /* uncovered by favored elements bytes */
-
-    static u8 temp_v[MAP_SIZE >> 3];
-    memset(temp_v, 255, MAP_SIZE >> 3);
-
-    for (i = 0; i < MAP_SIZE; i++) {
-      if (top_rated[i]) {
-        if ((temp_v[i >> 3] & (1 << (i & 7)))) {
-
-          /* Let's see if anything in the bitmap isn't captured in temp_v.
-             If yes, and if it has a top_rated[] contender, let's use it. */
-
-          u32 j = MAP_SIZE >> 3;
-
-          /* Remove all bits belonging to the current entry from temp_v. */
-
-          while (j--) {
-            if (top_rated[i]->trace_mini[j]) {
-              temp_v[j] &= ~top_rated[i]->trace_mini[j];
-            }
-          }
-
-          top_rated[i]->favored = 1;
-          queued_favored++;
-
-          if (!top_rated[i]->was_fuzzed) {
-            pending_favored++;
-          }
-
-        }
-      }
-    }
-
-  }
-
-  q = queue;
-
-  while (q) {
-    mark_as_redundant(q, !q->favored);
     q = q->next;
   }
 
@@ -3175,8 +3000,6 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
   total_bitmap_size += q->bitmap_size;
   total_bitmap_entries++;
 
-  update_bitmap_score(q);
-
   /* If this case didn't result in new output from the instrumentation, tell
      parent. This is a non-critical problem, but something to warn the user
      about. */
@@ -3278,21 +3101,20 @@ static void perform_dry_run(char** argv) {
            q->len, q->bitmap_size, q->exec_us);
 
     switch (res) {
+      case FAULT_NONE: {
+        if (q == queue)
+          check_map_coverage();
 
-      case FAULT_NONE:
+        // Populates the dsf_cumulated properly.
+        if (dsf_enabled)
+          has_dsf_changed();
 
-
-    	if (q == queue) check_map_coverage();
-
-	// Populates the dsf_cumulated properly.
-	if (dsf_enabled) has_dsf_changed();
-
-        if (crash_mode) FATAL("Test case '%s' does *NOT* crash", fn);
+        if (crash_mode)
+          FATAL("Test case '%s' does *NOT* crash", fn);
 
         break;
-
-      case FAULT_TMOUT:
-
+      }
+      case FAULT_TMOUT: {
         if (timeout_given) {
 
           /* The -t nn+ syntax in the command line sets timeout_given to '2' and
@@ -3311,11 +3133,11 @@ static void perform_dry_run(char** argv) {
                "    Usually, the right thing to do is to relax the -t option - or to delete it\n"
                "    altogether and allow the fuzzer to auto-calibrate. That said, if you know\n"
                "    what you are doing and want to simply skip the unruly test cases, append\n"
-               "    '+' at the end of the value passed to -t ('-t %u+').\n", exec_tmout,
+               "    '+' at the end of the value passed to -t ('-t %u+').\n",
+               exec_tmout,
                exec_tmout);
 
           FATAL("Test case '%s' results in a timeout", fn);
-
         } else {
 
           SAYF("\n" cLRD "[-] " cRST
@@ -3324,15 +3146,15 @@ static void perform_dry_run(char** argv) {
                "    will probably make the fuzzing process extremely slow.\n\n"
 
                "    If this test case is just a fluke, the other option is to just avoid it\n"
-               "    altogether, and find one that is less of a CPU hog.\n", exec_tmout);
+               "    altogether, and find one that is less of a CPU hog.\n",
+               exec_tmout);
 
           FATAL("Test case '%s' results in a timeout", fn);
-
         }
-
-      case FAULT_CRASH:  
-
-        if (crash_mode) break;
+      }
+      case FAULT_CRASH: {
+        if (crash_mode)
+          break;
 
         if (skip_crashes) {
           WARNF("Test case results in a crash (skipping)");
@@ -3340,9 +3162,7 @@ static void perform_dry_run(char** argv) {
           cal_failures++;
           break;
         }
-
         if (mem_limit) {
-
           SAYF("\n" cLRD "[-] " cRST
                "Oops, the program crashed with one of the test cases provided. There are\n"
                "    several possible explanations:\n\n"
@@ -3367,7 +3187,7 @@ static void perform_dry_run(char** argv) {
                "      if you are using ASAN, see %s/notes_for_asan.txt.\n\n"
 
 #ifdef __APPLE__
-  
+
                "    - On MacOS X, the semantics of fork() syscalls are non-standard and may\n"
                "      break afl-fuzz performance optimizations when running platform-specific\n"
                "      binaries. To fix this, set AFL_NO_FORKSRV=1 in the environment.\n\n"
@@ -3377,9 +3197,7 @@ static void perform_dry_run(char** argv) {
                "    - Least likely, there is a horrible bug in the fuzzer. If other options\n"
                "      fail, poke <lcamtuf@coredump.cx> for troubleshooting tips.\n",
                DMS(mem_limit << 20), mem_limit - 1, doc_path);
-
         } else {
-
           SAYF("\n" cLRD "[-] " cRST
                "Oops, the program crashed with one of the test cases provided. There are\n"
                "    several possible explanations:\n\n"
@@ -3389,7 +3207,7 @@ static void perform_dry_run(char** argv) {
                "      inputs - but not ones that cause an outright crash.\n\n"
 
 #ifdef __APPLE__
-  
+
                "    - On MacOS X, the semantics of fork() syscalls are non-standard and may\n"
                "      break afl-fuzz performance optimizations when running platform-specific\n"
                "      binaries. To fix this, set AFL_NO_FORKSRV=1 in the environment.\n\n"
@@ -3398,31 +3216,29 @@ static void perform_dry_run(char** argv) {
 
                "    - Least likely, there is a horrible bug in the fuzzer. If other options\n"
                "      fail, poke <lcamtuf@coredump.cx> for troubleshooting tips.\n");
-
         }
 
         FATAL("Test case '%s' results in a crash", fn);
-
-      case FAULT_ERROR:
-
+      }
+      case FAULT_ERROR: {
         FATAL("Unable to execute target application ('%s')", argv[0]);
-
-      case FAULT_NOINST:
-
+      }
+      case FAULT_NOINST: {
         FATAL("No instrumentation detected");
-
-      case FAULT_NOBITS: 
-
+      }
+      case FAULT_NOBITS: {
         useless_at_start++;
 
         if (!in_bitmap && !shuffle_queue)
           WARNF("No new instrumentation output, test case may be useless.");
 
         break;
-
+      }
     }
 
-    if (q->var_behavior) WARNF("Instrumentation output varies across runs.");
+    if (q->var_behavior) {
+      WARNF("Instrumentation output varies across runs.");
+    }
 
     q = q->next;
 
@@ -5085,8 +4901,7 @@ static u8 trim_case(char** argv, struct queue_entry* q, u8* in_buf) {
         memmove(in_buf + remove_pos, in_buf + remove_pos + trim_avail, 
                 move_tail);
 
-        /* Let's save a clean trace, which will be needed by
-           update_bitmap_score once we're done with the trimming stuff. */
+        /* Let's save a clean trace. */
 
         if (!needs_write) {
 
@@ -5129,8 +4944,6 @@ static u8 trim_case(char** argv, struct queue_entry* q, u8* in_buf) {
     if (dsf_enabled) {
       memcpy(dsf_map, clean_dsf, dsf_len_actual * sizeof(u32));
     }
-    update_bitmap_score(q);
-
   }
 
 abort_trimming:
@@ -5166,9 +4979,7 @@ EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len) {
 
   queued_discovered += save_fault(argv, out_buf, len, fault);
 
-  /* BANDITS: call init_queue_entry here since trace_bits are correct. 
-     
-     NOTE: this has the effect of calling update_bitmap_score() everytime. */
+  /* BANDITS: call init_queue_entry here since trace_bits are correct. */
 
   struct queue_entry* mut_q = init_queue_entry(argv, out_buf, len);
 
@@ -8599,11 +8410,6 @@ int main(int argc, char** argv) {
   if (dsf_enabled || save_everything) {
     setup_dsf_cumulated();
   }
-  if (dsf_enabled) {
-    top_rated = ck_alloc(dsf_len_actual * sizeof(struct queue_entry *));
-  } else {
-    top_rated = ck_alloc(MAP_SIZE * sizeof(struct queue_entry *));
-  }
 
   perform_dry_run(use_argv);
 
@@ -8718,7 +8524,6 @@ stop_fuzzing:
   fclose(plot_file);
   destroy_queue();
   destroy_extras();
-  ck_free(top_rated);
   ck_free(target_path);
   ck_free(sync_id);
 
