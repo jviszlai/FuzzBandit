@@ -771,10 +771,6 @@ static void mark_as_variable(struct queue_entry* q) {
   }
 
   ck_free(ldest);
-
-  DEBUG("[BANDITS DEBUG]: mark_as_variable freeing fn '%s'\n", fn);
-  DEBUG("[BANDITS DEBUG]: ... addr '%p'\n", &fn);
-
   ck_free(fn);
 
   q->var_behavior = 1;
@@ -1121,16 +1117,12 @@ static void remove_from_queue(struct queue_entry *q) {
 
 EXP_ST void destroy_queue_entry(struct queue_entry* q) {
 
-  DEBUG("[BANDITS DEBUG]: ...... Freeing fname '%s'\n", q->fname);
-  DEBUG("[BANDITS DEBUG]: ...... @ addr '%p'?\n", q->fname);
-  DEBUG("[BANDITS DEBUG]: ...... @ addr '%p'??\n", &(q->fname));
   if (q->fname) {
     ck_free(q->fname);
   }
   if (q->buf) {
     ck_free(q->buf);
   }
-  DEBUG("[BANDITS DEBUG]: ...... Freeing buf\n");
 
 }
 
@@ -3359,7 +3351,6 @@ static void pivot_inputs(void) {
     /* Pivot to the new queue entry. */
 
     link_or_copy(q->fname, nfn);
-    DEBUG("[BANDITS DEBUG]: PIVOT FREED THE FILENAME '%s'\n", q->fname);
     ck_free(q->fname);
     q->fname = nfn;
 
@@ -4972,8 +4963,6 @@ EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len) {
     FATAL("Mutations list is empty. This should never happen.");
   }
 
-  DEBUG("[BANDITS DEBUG]: Alloc (%d) %p\n", cur_mut->mut_id, cur_mut);
-
   /* BANDITS: Flip a bit if a fault occurred. */
 
   if (fault != FAULT_NONE) {
@@ -5365,9 +5354,6 @@ static u8 fuzz_one(char** argv) {
 
   DEBUG("===============Fuzzing test case #%u===============\n", current_entry);
 
-  if (!queue_cur->favored) {
-    DEBUG("(Test case is not favored)\n");
-  }
   if (not_on_tty) {
     ACTF("Fuzzing test case #%u (%u total, %llu uniq crashes found)...",
          current_entry, queued_paths, unique_crashes);
@@ -5417,8 +5403,6 @@ static u8 fuzz_one(char** argv) {
    *******************************************/
 
   if (queue_cur->cal_failed) {
-
-    DEBUG("[BANDITS DEBUG]: Calibrating queue since previous calibration failed.\n");
 
     u8 res = FAULT_TMOUT;
 
@@ -6935,18 +6919,10 @@ abandon_entry:
     mutation *cur_mut = mutation_list;
     mutation_list = mutation_list->next;
 
-    DEBUG("[BANDITS DEBUG]: Free (%d) %p\n", cur_mut->mut_id, cur_mut);
-
     /* Pro-tip: don't free the queue entry about to be added to the 
        main queue. */
 
     if (sampled_mut_id != -1 && cur_mut->mut_id != sampled_mut_id) {
-      DEBUG("[BANDITS DEBUG]: - Destroy mut_q %p\n", cur_mut->mut_q);
-      DEBUG("[BANDITS DEBUG]: - Print mut_q->fname %p\n", cur_mut->mut_q->fname);
-      DEBUG("[BANDITS DEBUG]: - Print &mut_q->fname %p\n", &(cur_mut->mut_q->fname));
-      DEBUG("[BANDITS DEBUG]: - Print queue %p\n", queue);
-      DEBUG("[BANDITS DEBUG]: - Print queue_cur %p\n", queue_cur);
-
       destroy_queue_entry(cur_mut->mut_q);
       ck_free(cur_mut->mut_q);
     }
@@ -8412,8 +8388,6 @@ int main(int argc, char** argv) {
   /* MAIN EXECUTION LOOP. */
 
   while (1) {
-
-    DEBUG("\n[BANDIT DEBUG]: New Iteration --->\n\n");
 
     u8 skipped_fuzz;
 
