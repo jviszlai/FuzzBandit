@@ -53,9 +53,6 @@ extern "C"
                  handicap, /* Number of queue cycles behind    */
                  depth;    /* Path depth                       */
 
-        uint8_t *trace_mini; /* Trace bytes, if kept             */
-        uint32_t tc_ref;     /* Trace bytes ref count            */
-
         struct queue_entry *next; /* Next element, if any             */
     };
 

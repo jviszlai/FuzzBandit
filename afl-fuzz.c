@@ -271,9 +271,6 @@ struct queue_entry {
       handicap,                       /* Number of queue cycles behind    */
       depth;                          /* Path depth                       */
 
-  u8* trace_mini;                     /* Trace bytes, if kept             */
-  u32 tc_ref;                         /* Trace bytes ref count            */
-
   struct queue_entry *next;           /* Next element, if any             */
 
 };
@@ -1130,10 +1127,6 @@ EXP_ST void destroy_queue_entry(struct queue_entry* q) {
   if (q->fname) {
     ck_free(q->fname);
   }
-  DEBUG("[BANDITS DEBUG]: ...... Freeing trace_mini\n");
-  if (q->trace_mini) {
-    ck_free(q->trace_mini);
-  }
   if (q->buf) {
     ck_free(q->buf);
   }
@@ -1580,24 +1573,6 @@ static inline void classify_counts(u32* mem) {
 static void remove_shm(void) {
 
   shmctl(shm_id, IPC_RMID, NULL);
-
-}
-
-
-/* Compact trace bytes into a smaller bitmap. We effectively just drop the
-   count information here. This is called only sporadically, for some
-   new paths. */
-
-static void minimize_bits(u8* dst, u8* src) {
-
-  u32 i = 0;
-
-  while (i < MAP_SIZE) {
-
-    if (*(src++)) dst[i >> 3] |= 1 << (i & 7);
-    i++;
-
-  }
 
 }
 
