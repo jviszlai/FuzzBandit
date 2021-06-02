@@ -278,6 +278,9 @@ int get_advice(std::vector<std::vector<double>> &advice, mutation *mutations, mu
     // Normalize the context vectors
     for (int i = 0; i < NUM_FEEDBACK; i++)
     {
+        if (totals[i] == 0) {
+            continue;
+        }
         for (int j = 0; j < advice[i].size(); j++)
         {
             advice[i][j] = advice[i][j] / totals[i];
