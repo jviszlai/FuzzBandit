@@ -143,7 +143,9 @@ mutation *sample_mutation(mutation *mutations, mutation *sentinel)
         for (int i = 0; i < expert_weights.size(); i++)
         {
             mutation_prob += expert_weights[i] * advice[i][mut_size];
-            total_expert_weight += expert_weights[i];
+            if (advice[i][mut_size] != 0) {
+                total_expert_weight += expert_weights[i];
+            }
         }
 
         // Normalize and set the probability
