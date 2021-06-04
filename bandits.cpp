@@ -270,7 +270,7 @@ int get_advice(std::vector<std::vector<double>> &advice, mutation *mutations, mu
         totals[5] += curr->bitmap_size * 1.0;
 
         // Compute feedback for execution time
-        double exec_sec = curr->bitmap_size / (1.0 * 1e6);
+        double exec_sec = curr->exec_us / (1.0 * 1e6);
         advice[6].emplace_back(exec_sec);
         totals[6] += exec_sec;
     }
