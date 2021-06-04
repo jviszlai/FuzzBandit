@@ -143,9 +143,7 @@ mutation *sample_mutation(mutation *mutations, mutation *sentinel)
         for (int i = 0; i < expert_weights.size(); i++)
         {
             mutation_prob += expert_weights[i] * advice[i][mut_size];
-            if (advice[i][mut_size] != 0) {
-                total_expert_weight += expert_weights[i];
-            }
+            total_expert_weight += expert_weights[i];
         }
 
         // Normalize and set the probability
@@ -280,12 +278,12 @@ int get_advice(std::vector<std::vector<double>> &advice, mutation *mutations, mu
     // Normalize the context vectors
     for (int i = 0; i < NUM_FEEDBACK; i++)
     {
-        if (totals[i] == 0) {
-            continue;
-        }
-        for (int j = 0; j < advice[i].size(); j++)
+        if (totals[i] != 0) 
         {
-            advice[i][j] = advice[i][j] / totals[i];
+            for (int j = 0; j < advice[i].size(); j++)
+            {
+                advice[i][j] = advice[i][j] / totals[i];
+            }
         }
     }
 
